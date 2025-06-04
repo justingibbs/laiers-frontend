@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
@@ -17,11 +18,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable}`} suppressHydrationWarning={true}>
+    <html lang="en" className={`${inter.variable}`}>
       <head>
         {/* Existing font links can remain if needed, but Next/Font is preferred */}
       </head>
-      <body className="font-body antialiased min-h-screen flex flex-col">
+      <body className="font-body antialiased min-h-screen flex flex-col" suppressHydrationWarning={true}>
         <AppHeader />
         <main className="flex-grow container mx-auto px-4 py-8">
           {children}
