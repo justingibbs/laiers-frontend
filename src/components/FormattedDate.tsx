@@ -10,31 +10,37 @@ interface FormattedDateProps {
 }
 
 export default function FormattedDate({ timestamp, options, className }: FormattedDateProps) {
-  const [dateString, setDateString] = useState<string>('');
+  const [dateToDisplay, setDateToDisplay] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    // Ensure timestamp is valid before creating a Date object
+    setIsMounted(true);
     if (timestamp && typeof timestamp === 'number' && !isNaN(timestamp)) {
       try {
-        setDateString(new Date(timestamp).toLocaleDateString(undefined, options));
+        setDateToDisplay(new Date(timestamp).toLocaleDateString(undefined, options));
       } catch (error) {
         console.error("Error formatting date:", error);
-        setDateString('Invalid date');
+        setDateToDisplay('Invalid date');
       }
-    } else if (timestamp) { // Log if timestamp is present but not a valid number
-        console.warn("Invalid timestamp for FormattedDate:", timestamp);
-        setDateString('Invalid date');
+    } else if (timestamp) { // Timestamp exists but is not a valid number
+      setDateToDisplay('Invalid date');
+    } else { // No timestamp provided
+      setDateToDisplay(null);
     }
   }, [timestamp, options]);
 
-  // Render placeholder or null if dateString is not yet set or if timestamp was invalid
-  if (!dateString && timestamp) {
-    return <span className={className || "text-muted-foreground"}>Loading date...</span>;
-  }
-  // If timestamp was invalid from the start and resulted in empty dateString, or no timestamp
-  if (!dateString) {
-    return null; 
+  if (!isMounted) {
+    // Render a consistent, non-layout-shifting placeholder string or nothing.
+    // This string is a generic placeholder that aims to reserve similar space.
+    // Using a more generic placeholder if no className is provided for styling.
+    const placeholder = "--/--/----";
+    return <span className={className || "text-muted-foreground text-sm"}>{placeholder}</span>;
   }
 
-  return <span className={className}>{dateString}</span>;
+  if (dateToDisplay === null) {
+    // No timestamp was provided, or it was explicitly cleared.
+    return null;
+  }
+
+  return <span className={className}>{dateToDisplay}</span>;
 }
