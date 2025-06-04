@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -24,9 +25,10 @@ export default function ApplicantDashboardPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [sortedApplicants, setSortedApplicants] = useState<Applicant[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [surveyLink, setSurveyLink] = useState<string>("");
 
   useEffect(() => {
-    setMounted(true);
+    setMounted(true); // Indicates component has mounted on client
     const jobData = getJob(jobId);
     if (jobData) {
       setJob(jobData);
@@ -39,7 +41,14 @@ export default function ApplicantDashboardPage() {
     }
   }, [jobId, getJob, toast, router]);
 
+  useEffect(() => {
+    if (mounted && jobId && typeof window !== 'undefined') {
+      setSurveyLink(`${window.location.origin}/job/${jobId}/take-survey`);
+    }
+  }, [mounted, jobId]);
+
   const copyToClipboard = (text: string) => {
+    if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
       toast({ title: "Copied!", description: "Link copied to clipboard." });
     }).catch(err => {
@@ -51,9 +60,6 @@ export default function ApplicantDashboardPage() {
     return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><LoadingSpinner size={48} /></div>;
   }
   
-  const surveyLink = mounted ? `${window.location.origin}/job/${jobId}/take-survey` : "";
-
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -77,8 +83,9 @@ export default function ApplicantDashboardPage() {
               readOnly
               value={surveyLink}
               className="bg-muted flex-grow"
+              disabled={!surveyLink}
             />
-            <Button variant="outline" size="icon" onClick={() => copyToClipboard(surveyLink)} disabled={!mounted}>
+            <Button variant="outline" size="icon" onClick={() => copyToClipboard(surveyLink)} disabled={!surveyLink}>
               <ClipboardCopy className="h-4 w-4" />
             </Button>
           </div>
