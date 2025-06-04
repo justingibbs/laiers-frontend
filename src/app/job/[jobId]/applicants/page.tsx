@@ -28,7 +28,7 @@ export default function ApplicantDashboardPage() {
   const [surveyLink, setSurveyLink] = useState<string>("");
 
   useEffect(() => {
-    setMounted(true); // Indicates component has mounted on client
+    setMounted(true); 
     const jobData = getJob(jobId);
     if (jobData) {
       setJob(jobData);
@@ -36,10 +36,13 @@ export default function ApplicantDashboardPage() {
       const sorted = [...applicantsWithScores].sort((a, b) => (b.overallScoreData?.overallScore || 0) - (a.overallScoreData?.overallScore || 0));
       setSortedApplicants(sorted);
     } else {
-      toast({ variant: "destructive", title: "Error", description: "Job not found." });
-      router.push('/');
+      // Only toast and redirect if mounted, to avoid issues during SSR or initial client render
+      if (mounted) {
+        toast({ variant: "destructive", title: "Error", description: "Job not found." });
+        router.push('/');
+      }
     }
-  }, [jobId, getJob, toast, router]);
+  }, [jobId, getJob, mounted]); // Add mounted to dependency array
 
   useEffect(() => {
     if (mounted && jobId && typeof window !== 'undefined') {
@@ -56,8 +59,24 @@ export default function ApplicantDashboardPage() {
     });
   };
 
-  if (!mounted || !job) {
-    return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><LoadingSpinner size={48} /></div>;
+  if (!mounted) {
+    return (
+      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
+        <LoadingSpinner size={48} />
+      </div>
+    );
+  }
+  
+  if (!job) {
+    // This case handles if jobData was not found after mount
+    return (
+      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold">Job Not Found</h2>
+        <p className="text-muted-foreground">The requested job could not be loaded.</p>
+        <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
+      </div>
+    );
   }
   
   return (
@@ -93,13 +112,13 @@ export default function ApplicantDashboardPage() {
       </Card>
 
 
-      {sortedApplicants.length === 0 ? (
+      {job.applicants.filter(app => app.overallScoreData).length === 0 ? ( // Check based on overallScoreData presence for sorting
         <Card className="text-center py-12">
            <CardHeader>
             <Users className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-            <CardTitle className="text-2xl">No Applicants Yet</CardTitle>
+            <CardTitle className="text-2xl">No Analyzed Applicants Yet</CardTitle>
             <CardDescription>
-              Share the survey link to start receiving applications. Responses will appear here.
+              Share the survey link. Responses with completed AI analysis will appear here.
             </CardDescription>
           </CardHeader>
         </Card>

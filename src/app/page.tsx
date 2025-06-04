@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from 'next/link';
@@ -7,6 +8,7 @@ import { useAppStore } from '@/lib/store';
 import { useEffect, useState } from 'react';
 import type { Job } from '@/lib/types';
 import { PlusCircle, Users, FileText } from 'lucide-react';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function HomePage() {
   const jobs = useAppStore((state) => state.getAllJobs());
@@ -17,13 +19,11 @@ export default function HomePage() {
   }, []);
 
   if (!mounted) {
-    // To avoid hydration mismatch with Zustand persisted state
+    // Return null or a minimal skeleton that won't cause hydration mismatch
+    // For critical pages like dashboard, a full page loader might be better than null if it's guaranteed to match
     return (
-      <div className="space-y-8">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-headline font-bold">Job Dashboard</h1>
-        </div>
-        <p>Loading jobs...</p>
+      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
+        <LoadingSpinner size={48} />
       </div>
     );
   }

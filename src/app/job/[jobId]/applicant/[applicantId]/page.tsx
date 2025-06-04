@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -11,7 +12,7 @@ import { useAppStore } from '@/lib/store';
 import type { Job, Applicant } from '@/lib/types';
 import SkillIcon from '@/components/SkillIcon';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { BarChart, Brain, FileText, MessageSquare, Users, ShieldCheck, Lightbulb, Repeat, Sparkles, ChevronLeft, Star } from 'lucide-react';
+import { BarChart, Brain, FileText, MessageSquare, Users, ShieldCheck, Lightbulb, Repeat, Sparkles, ChevronLeft, Star, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 
@@ -35,14 +36,37 @@ export default function ApplicantDetailPage() {
     if (jobData) setJob(jobData);
     if (applicantData) setApplicant(applicantData);
 
-    if (!jobData || !applicantData) {
-      toast({ variant: "destructive", title: "Error", description: "Job or applicant not found." });
-      router.push(jobId ? `/job/${jobId}/applicants` : '/');
+    if (mounted) { // Only show toast/redirect if component is truly mounted and data is missing
+      if (!jobData) {
+        toast({ variant: "destructive", title: "Error", description: "Job not found." });
+        router.push(jobId ? `/job/${jobId}/applicants` : '/');
+      } else if (!applicantData) {
+        toast({ variant: "destructive", title: "Error", description: "Applicant not found." });
+        router.push(`/job/${jobId}/applicants`);
+      }
     }
-  }, [jobId, applicantId, getJob, getApplicant, toast, router]);
+  }, [jobId, applicantId, getJob, getApplicant, mounted, toast, router]);
 
-  if (!mounted || !job || !applicant) {
-    return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><LoadingSpinner size={48} /></div>;
+
+  if (!mounted) {
+    return (
+      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
+        <LoadingSpinner size={48} />
+      </div>
+    );
+  }
+
+  if (!job || !applicant) {
+     return (
+      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold">Applicant or Job Data Not Found</h2>
+        <p className="text-muted-foreground">The requested details could not be loaded.</p>
+        <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
+          Back to Dashboard
+        </Button>
+      </div>
+    );
   }
 
   const renderScoreBar = (skillName: string, score: number) => (
