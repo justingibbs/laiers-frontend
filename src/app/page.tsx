@@ -82,7 +82,7 @@ export default function HomePage() {
                   <p className="text-sm text-muted-foreground line-clamp-3">
                     {job.descriptionInput}
                   </p>
-                  {job.survey && (
+                  {job.survey && job.survey.questions && (
                     <div className="mt-2 text-xs">
                       <span className="font-semibold">{job.survey.questions.length}</span> survey questions
                     </div>
