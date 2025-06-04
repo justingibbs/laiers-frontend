@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useForm, type SubmitHandler } from 'react-hook-form'; // Removed Controller as it's not used
+import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -31,8 +31,6 @@ const createSurveySchema = (questions: string[]) => {
   return z.object(schemaFields);
 };
 
-// Define SurveyFormData outside the component to prevent re-creation on every render
-// This will be updated dynamically via a useEffect hook if questions change
 type SurveyFormData = Record<string, string> & { applicantName: string };
 
 
@@ -47,48 +45,80 @@ export default function TakeSurveyPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submissionSummary, setSubmissionSummary] = useState<string | null>(null);
-  const [isLoadingJob, setIsLoadingJob] = useState(true);
+  const [isLoadingJob, setIsLoadingJob] = useState(true); // For job data fetching specifically
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [surveyQuestions, setSurveyQuestions] = useState<string[]>([]);
-  
-  // Form instance using dynamic schema
+  const [isStoreHydrated, setIsStoreHydrated] = useState(useAppStore.persist.hasHydrated());
+
   const form = useForm<SurveyFormData>({
-    resolver: zodResolver(createSurveySchema(surveyQuestions)), // Initialize with current questions
+    resolver: zodResolver(createSurveySchema(surveyQuestions)),
     defaultValues: { applicantName: "" }, 
   });
 
   useEffect(() => {
-    // This effect runs only on client
+    // Handle Zustand store hydration
+    if (!isStoreHydrated) {
+      const unsub = useAppStore.persist.onFinishHydration(() => {
+        setIsStoreHydrated(true);
+        unsub(); // Unsubscribe once hydrated
+      });
+      // Fallback if onFinishHydration was missed (e.g. store already hydrated)
+      if (useAppStore.persist.hasHydrated()) {
+        setIsStoreHydrated(true);
+        unsub();
+      }
+      return unsub; // Cleanup subscription
+    }
+  }, [isStoreHydrated]);
+
+  useEffect(() => {
+    // Fetch job data only after store is hydrated
+    if (!isStoreHydrated) {
+      setIsLoadingJob(true); // Keep loading indicator active
+      return;
+    }
+
     setIsLoadingJob(true);
     const jobData = getJobFromStore(jobId);
     if (jobData) {
       setJob(jobData);
       const questions = jobData.survey?.questions || [];
       setSurveyQuestions(questions);
-      // Reset form with new questions and default values
-      form.reset({ 
-        applicantName: "", 
-        ...questions.reduce((acc, _, index) => ({...acc, [`answer${index}`]: ""}), {}) 
-      });
-       // Update resolver with the new schema based on fetched questions
-      form.trigger().then(() => { // Ensure validation triggers after reset if needed.
-        (form as any).resolver = zodResolver(createSurveySchema(questions));
-      });
       setErrorMessage(null);
     } else {
+      setJob(null);
+      setSurveyQuestions([]);
       setErrorMessage("Job not found or survey is not available for this job.");
     }
     setIsLoadingJob(false);
-  }, [jobId, getJobFromStore, form]); // form added to dependency array
+  }, [jobId, getJobFromStore, isStoreHydrated]);
 
   useEffect(() => {
-    // This effect runs only on client
+    // Reset form when job data (and thus survey questions) changes
+    if (!isStoreHydrated) return; // Wait for hydration
+
+    if (job && job.survey?.questions) {
+      const defaultFormValues: SurveyFormData = { applicantName: "" };
+      job.survey.questions.forEach((_, index) => {
+        defaultFormValues[`answer${index}`] = "";
+      });
+      form.reset(defaultFormValues);
+    } else {
+      form.reset({ applicantName: "" }); // Basic reset if no questions
+    }
+  }, [job, form.reset, isStoreHydrated]);
+
+
+  useEffect(() => {
+    // Handle error messages and redirection
+    if (!isStoreHydrated) return; // Wait for hydration
+
     if (errorMessage && !isLoadingJob && !job) {
       toast({ variant: "destructive", title: "Error", description: errorMessage });
       router.push('/');
     }
-  }, [errorMessage, isLoadingJob, job, router, toast]);
+  }, [errorMessage, isLoadingJob, job, router, toast, isStoreHydrated]);
 
 
   const handleSubmitSurvey: SubmitHandler<SurveyFormData> = async (data) => {
@@ -100,7 +130,7 @@ export default function TakeSurveyPage() {
 
     const currentResponses = job.survey.questions.map((question, index) => ({
       question,
-      answer: data[`answer${index}`] as string, // data is already SurveyFormData
+      answer: data[`answer${index}`] as string,
     }));
 
     const applicantId = `app-${Date.now()}`;
@@ -140,13 +170,20 @@ export default function TakeSurveyPage() {
     } catch (error) {
       console.error("Error processing survey:", error);
       toast({ variant: "destructive", title: "Error", description: "Failed to process survey responses." });
+      // Optionally revert applicant addition or mark as errored
     }
     setIsSubmitting(false);
   };
 
-  // Render loading spinner if isLoadingJob is true
-  if (isLoadingJob) {
-    return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><LoadingSpinner size={48} /></div>;
+  // Combined loading state: wait for store hydration AND job data loading
+  if (!isStoreHydrated || isLoadingJob) {
+    return (
+      <ClientOnly> {/* ClientOnly still useful for general mounting guard */}
+        <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
+          <LoadingSpinner size={48} />
+        </div>
+      </ClientOnly>
+    );
   }
 
   if (errorMessage && !job) {
@@ -162,7 +199,7 @@ export default function TakeSurveyPage() {
     );
   }
   
-  if (!job?.survey?.questions || surveyQuestions.length === 0) { // Use state surveyQuestions
+  if (!job?.survey?.questions || surveyQuestions.length === 0) {
      return (
       <ClientOnly>
         <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
@@ -242,7 +279,7 @@ export default function TakeSurveyPage() {
                   <FormField
                     key={index}
                     control={form.control}
-                    name={`answer${index}`} // Name is now just a string
+                    name={`answer${index}`}
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-base">Question {index + 1}: {question}</FormLabel>
@@ -268,3 +305,4 @@ export default function TakeSurveyPage() {
     </ClientOnly>
   );
 }
+
