@@ -29,11 +29,23 @@ const prompt = ai.definePrompt({
   name: 'generateJobListingPrompt',
   input: {schema: GenerateJobListingInputSchema},
   output: {schema: GenerateJobListingOutputSchema},
-  prompt: `You are an expert recruiter specializing in creating job listings.
+  prompt: `You are an expert recruiter specializing in creating compelling and detailed job listings that attract top talent.
 
-  You will use this job description to generate a job listing.
+You will use the provided job description to generate a comprehensive job listing. This listing should follow best practices observed in successful online job postings.
 
-  Job Description: {{{jobDescription}}}
+Ensure the job listing includes, but is not limited to, the following sections:
+- **Job Title:** Clear and concise.
+- **Company Overview:** A brief, engaging description of the company and its mission/culture.
+- **Job Summary:** An overview of the role and its purpose within the company.
+- **Key Responsibilities:** A detailed list of primary duties and tasks.
+- **Required Qualifications:** Essential skills, experience, and education.
+- **Preferred Qualifications:** Desirable, but not mandatory, skills and experience.
+- **Benefits:** Highlight key benefits and perks offered.
+- **Call to Action:** How to apply.
+
+The tone should be professional, engaging, and inclusive.
+
+Job Description: {{{jobDescription}}}
   `,
 });
 
@@ -48,3 +60,4 @@ const generateJobListingFlow = ai.defineFlow(
     return output!;
   }
 );
+
