@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -17,9 +18,8 @@ import type { Job, Applicant } from '@/lib/types';
 import { analyzeSurveyResponses } from '@/ai/flows/analyze-survey-responses';
 import { summarizeSurveyResponses } from '@/ai/flows/summarize-survey-responses';
 import SkillIcon from '@/components/SkillIcon';
-import { Send, CheckCircle, User } from 'lucide-react';
+import { Send, CheckCircle, User, AlertTriangle } from 'lucide-react';
 
-// Dynamically create schema based on questions
 const createSurveySchema = (questions: string[]) => {
   const schemaFields: Record<string, z.ZodString> = {
     applicantName: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -38,37 +38,57 @@ export default function TakeSurveyPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const { getJob, addApplicant, updateApplicant } = useAppStore();
+  const { getJob: getJobFromStore, addApplicant, updateApplicant } = useAppStore();
   const [job, setJob] = useState<Job | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Renamed from isLoading for clarity
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submissionSummary, setSubmissionSummary] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const jobData = getJob(jobId);
-    if (jobData) {
-      setJob(jobData);
-    } else {
-      toast({ variant: "destructive", title: "Error", description: "Job not found." });
-      router.push('/');
-    }
-  }, [jobId, getJob, toast, router]);
+  const [isLoadingJob, setIsLoadingJob] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  const surveyQuestions = job?.survey?.questions || [];
-  const surveySchema = createSurveySchema(surveyQuestions);
+  const [surveyQuestions, setSurveyQuestions] = useState<string[]>([]);
+  const surveySchema = createSurveySchema(surveyQuestions); // Schema is now state-dependent
 
   const form = useForm<SurveyFormData>({
     resolver: zodResolver(surveySchema),
-    defaultValues: { applicantName: "" }, // Answers will be undefined initially
+    defaultValues: { applicantName: "" }, 
   });
 
-  const handleSubmitSurvey: SubmitHandler<SurveyFormData> = async (data) => {
-    if (!job || !job.survey) return;
-    setIsLoading(true);
+  useEffect(() => {
+    setIsLoadingJob(true);
+    const jobData = getJobFromStore(jobId);
+    if (jobData) {
+      setJob(jobData);
+      setSurveyQuestions(jobData.survey?.questions || []);
+      setErrorMessage(null);
+    } else {
+      setErrorMessage("Job not found or survey is not available for this job.");
+    }
+    setIsLoadingJob(false);
+  }, [jobId, getJobFromStore]);
 
-    const responses = surveyQuestions.map((question, index) => ({
+  // Reset form when survey questions change (e.g., job loaded)
+  useEffect(() => {
+    form.reset({ applicantName: "", ...surveyQuestions.reduce((acc, _, index) => ({...acc, [`answer${index}`]: ""}), {}) });
+  }, [surveyQuestions, form]);
+
+
+  useEffect(() => {
+    if (errorMessage && !isLoadingJob && !job) { // Only redirect if job truly not found after loading attempt
+      toast({ variant: "destructive", title: "Error", description: errorMessage });
+      router.push('/');
+    }
+  }, [errorMessage, isLoadingJob, job, router, toast]);
+
+
+  const handleSubmitSurvey: SubmitHandler<SurveyFormData> = async (data) => {
+    if (!job || !job.survey) {
+      toast({ variant: "destructive", title: "Error", description: "Survey details are missing." });
+      return;
+    }
+    setIsSubmitting(true);
+
+    const currentResponses = job.survey.questions.map((question, index) => ({
       question,
       answer: data[`answer${index}` as keyof SurveyFormData] as string,
     }));
@@ -78,24 +98,22 @@ export default function TakeSurveyPage() {
       id: applicantId,
       name: data.applicantName,
       jobId: job.id,
-      responses,
+      responses: currentResponses,
       submittedAt: Date.now(),
     };
     addApplicant(job.id, newApplicant);
 
     try {
-      // AI Analysis
       const analysisInput = {
         jobListing: job.generatedListingText || job.descriptionInput,
         softSkills: job.survey.topSkills,
-        responses: responses,
+        responses: currentResponses,
       };
       const analysisResult = await analyzeSurveyResponses(analysisInput);
       updateApplicant(job.id, applicantId, { analysisOutput: analysisResult });
       
-      // AI Summary
       const surveyResponsesMap: Record<string, string> = {};
-      responses.forEach(r => { surveyResponsesMap[r.question] = r.answer; });
+      currentResponses.forEach(r => { surveyResponsesMap[r.question] = r.answer; });
       
       const summaryInput = {
         jobListing: job.generatedListingText || job.descriptionInput,
@@ -112,18 +130,32 @@ export default function TakeSurveyPage() {
     } catch (error) {
       console.error("Error processing survey:", error);
       toast({ variant: "destructive", title: "Error", description: "Failed to process survey responses." });
+      // Optionally, remove the applicant or mark them as failed processing
     }
-    setIsLoading(false);
+    setIsSubmitting(false);
   };
 
-  if (!mounted || !job) {
+  if (isLoadingJob) {
     return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><LoadingSpinner size={48} /></div>;
   }
-  if (!job.survey) {
+
+  if (errorMessage && !job) { // If error message is set and job is not loaded (e.g. job not found)
      return (
-      <div className="text-center py-10">
-        <h1 className="text-2xl font-bold mb-4">Survey Not Available</h1>
-        <p className="text-muted-foreground">This job does not have an active survey.</p>
+      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h1 className="text-2xl font-bold mb-2">Survey Not Available</h1>
+        <p className="text-muted-foreground mb-4">{errorMessage}</p>
+        <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
+      </div>
+    );
+  }
+  
+  if (!job?.survey?.questions || job.survey.questions.length === 0) {
+     return (
+      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
+        <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
+        <h1 className="text-2xl font-bold mb-2">Survey Not Configured</h1>
+        <p className="text-muted-foreground mb-4">This job does not have an active survey or questions are missing.</p>
         <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
       </div>
     );
@@ -132,7 +164,7 @@ export default function TakeSurveyPage() {
 
   if (isSubmitted) {
     return (
-      <Card className="max-w-2xl mx-auto">
+      <Card className="max-w-2xl mx-auto my-8">
         <CardHeader className="text-center">
           <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
           <CardTitle className="text-2xl">Thank You for Your Submission!</CardTitle>
@@ -152,22 +184,24 @@ export default function TakeSurveyPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
+    <div className="max-w-2xl mx-auto space-y-8 py-8">
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl font-headline">Skills Survey: {job.title}</CardTitle>
           <CardDescription>Please answer the following questions thoughtfully. Your responses will help us understand your approach to various situations.</CardDescription>
-          <div className="pt-2">
-            <h3 className="text-sm font-semibold">Key Skills Assessed:</h3>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {job.survey.topSkills.map(skill => (
-                <span key={skill} className="flex items-center gap-1 text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
-                  <SkillIcon skill={skill} className="h-3 w-3" />
-                  {skill}
-                </span>
-              ))}
+          {job.survey?.topSkills && (
+            <div className="pt-2">
+              <h3 className="text-sm font-semibold">Key Skills Assessed:</h3>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {job.survey.topSkills.map(skill => (
+                  <span key={skill} className="flex items-center gap-1 text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
+                    <SkillIcon skill={skill} className="h-3 w-3" />
+                    {skill}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </CardHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmitSurvey)}>
@@ -206,9 +240,9 @@ export default function TakeSurveyPage() {
               ))}
             </CardContent>
             <CardFooter>
-              <Button type="submit" disabled={isLoading} className="w-full">
-                {isLoading ? <LoadingSpinner /> : "Submit Responses"}
-                {!isLoading && <Send className="ml-2 h-4 w-4" />}
+              <Button type="submit" disabled={isSubmitting} className="w-full">
+                {isSubmitting ? <LoadingSpinner /> : "Submit Responses"}
+                {!isSubmitting && <Send className="ml-2 h-4 w-4" />}
               </Button>
             </CardFooter>
           </form>

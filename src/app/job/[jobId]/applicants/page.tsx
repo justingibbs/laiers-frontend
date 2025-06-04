@@ -25,24 +25,9 @@ export default function ApplicantDashboardPage() {
   const getJobFromStore = useAppStore((state) => state.getJob);
   const [job, setJob] = useState<Job | null>(null);
   const [sortedApplicants, setSortedApplicants] = useState<Applicant[]>([]);
-  const [mounted, setMounted] = useState(false);
   const [surveyLink, setSurveyLink] = useState<string>("");
-
-  useEffect(() => {
-    setMounted(true); 
-    const jobData = getJobFromStore(jobId);
-    if (jobData) {
-      setJob(jobData);
-      const applicantsWithScores = jobData.applicants.filter(app => app.overallScoreData);
-      const sorted = [...applicantsWithScores].sort((a, b) => (b.overallScoreData?.overallScore || 0) - (a.overallScoreData?.overallScore || 0));
-      setSortedApplicants(sorted);
-    } else {
-      if (mounted) { // Only toast and redirect if mounted, to avoid issues during SSR or initial client render
-        toast({ variant: "destructive", title: "Error", description: "Job not found." });
-        router.push('/');
-      }
-    }
-  }, [jobId, getJobFromStore, mounted, router, toast]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (jobId && typeof window !== 'undefined') {
@@ -50,16 +35,29 @@ export default function ApplicantDashboardPage() {
     }
   }, [jobId]);
 
-  const copyToClipboard = (text: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      toast({ title: "Copied!", description: "Link copied to clipboard." });
-    }).catch(err => {
-      toast({ variant: "destructive", title: "Error", description: "Failed to copy link." });
-    });
-  };
+  useEffect(() => {
+    setIsLoading(true);
+    const jobData = getJobFromStore(jobId);
+    if (jobData) {
+      setJob(jobData);
+      const applicantsWithScores = jobData.applicants.filter(app => app.overallScoreData);
+      const sorted = [...applicantsWithScores].sort((a, b) => (b.overallScoreData?.overallScore || 0) - (a.overallScoreData?.overallScore || 0));
+      setSortedApplicants(sorted);
+      setErrorMessage(null);
+    } else {
+      setErrorMessage("Job not found.");
+    }
+    setIsLoading(false);
+  }, [jobId, getJobFromStore]);
 
-  if (!mounted) {
+  useEffect(() => {
+    if (errorMessage && !isLoading) {
+      toast({ variant: "destructive", title: "Error", description: errorMessage });
+      router.push('/');
+    }
+  }, [errorMessage, isLoading, router, toast]);
+
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <LoadingSpinner size={48} />
@@ -67,13 +65,25 @@ export default function ApplicantDashboardPage() {
     );
   }
   
-  if (!job) {
+  if (errorMessage && !job) {
     return (
       <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold">Job Not Found</h2>
+        <h2 className="text-xl font-semibold">{errorMessage}</h2>
         <p className="text-muted-foreground">The requested job could not be loaded.</p>
         <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
+      </div>
+    );
+  }
+
+  if (!job) {
+    // This case should ideally be handled by isLoading or errorMessage state
+    // but as a fallback:
+    return (
+        <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
+            <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+            <h2 className="text-xl font-semibold">Job data is unexpectedly missing.</h2>
+            <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
       </div>
     );
   }
@@ -103,13 +113,12 @@ export default function ApplicantDashboardPage() {
               className="bg-muted flex-grow"
               disabled={!surveyLink}
             />
-            <Button variant="outline" size="icon" onClick={() => copyToClipboard(surveyLink)} disabled={!surveyLink}>
+            <Button variant="outline" size="icon" onClick={() => surveyLink && navigator.clipboard.writeText(surveyLink).then(() => toast({ title: "Copied!"})).catch(() => toast({variant: "destructive", title: "Failed to copy"}))} disabled={!surveyLink}>
               <ClipboardCopy className="h-4 w-4" />
             </Button>
           </div>
         </CardContent>
       </Card>
-
 
       {job.applicants.filter(app => app.overallScoreData).length === 0 ? (
         <Card className="text-center py-12">

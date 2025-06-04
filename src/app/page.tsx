@@ -7,21 +7,31 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useAppStore } from '@/lib/store';
 import { useEffect, useState } from 'react';
 import type { Job } from '@/lib/types';
-import { PlusCircle, Users, FileText } from 'lucide-react';
+import { PlusCircle, Users, FileText, AlertTriangle } from 'lucide-react';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import FormattedDate from '@/components/FormattedDate';
 
 export default function HomePage() {
-  const getAllJobs = useAppStore((state) => state.getAllJobs);
+  const getAllJobsFromStore = useAppStore((state) => state.getAllJobs);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  // 'mounted' state can be removed if isLoading handles all initial render concerns
+  // For now, keeping it in case some other client-only logic might need it,
+  // but data fetching relies on isLoading.
 
   useEffect(() => {
-    setMounted(true);
-    setJobs(getAllJobs());
-  }, [getAllJobs]);
+    setIsLoading(true);
+    try {
+      const allJobs = getAllJobsFromStore();
+      setJobs(allJobs);
+    } catch (e) {
+      console.error("Error fetching jobs from store:", e);
+      // Potentially set an error state here if needed
+    }
+    setIsLoading(false);
+  }, [getAllJobsFromStore]);
 
-  if (!mounted) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <LoadingSpinner size={48} />

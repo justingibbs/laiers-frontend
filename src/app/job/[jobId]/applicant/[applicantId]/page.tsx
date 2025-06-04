@@ -23,32 +23,44 @@ export default function ApplicantDetailPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const { getJob, getApplicant } = useAppStore();
+  const { getJob: getJobFromStore, getApplicant: getApplicantFromStore } = useAppStore();
   const [job, setJob] = useState<Job | null>(null);
   const [applicant, setApplicant] = useState<Applicant | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-    const jobData = getJob(jobId);
-    const applicantData = getApplicant(jobId, applicantId);
+    setIsLoading(true);
+    const jobData = getJobFromStore(jobId);
+    const applicantData = getApplicantFromStore(jobId, applicantId);
 
-    if (jobData) setJob(jobData);
-    if (applicantData) setApplicant(applicantData);
-
-    if (mounted) { // Only show toast/redirect if component is truly mounted and data is missing
-      if (!jobData) {
-        toast({ variant: "destructive", title: "Error", description: "Job not found." });
-        router.push(jobId ? `/job/${jobId}/applicants` : '/');
-      } else if (!applicantData) {
-        toast({ variant: "destructive", title: "Error", description: "Applicant not found." });
-        router.push(`/job/${jobId}/applicants`);
-      }
+    if (jobData) {
+      setJob(jobData);
+    } else {
+      setErrorMessage("Job not found.");
+      setApplicant(null); // Ensure applicant is also nulled if job not found
+      setIsLoading(false);
+      return;
     }
-  }, [jobId, applicantId, getJob, getApplicant, mounted, toast, router]);
 
+    if (applicantData) {
+      setApplicant(applicantData);
+      setErrorMessage(null);
+    } else {
+      setErrorMessage("Applicant not found.");
+    }
+    setIsLoading(false);
+  }, [jobId, applicantId, getJobFromStore, getApplicantFromStore]);
 
-  if (!mounted) {
+  useEffect(() => {
+    if (errorMessage && !isLoading) {
+      toast({ variant: "destructive", title: "Error", description: errorMessage });
+      // Redirect to applicants page if job or applicant is not found
+      router.push(jobId ? `/job/${jobId}/applicants` : '/');
+    }
+  }, [errorMessage, isLoading, router, toast, jobId]);
+
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <LoadingSpinner size={48} />
@@ -56,11 +68,11 @@ export default function ApplicantDetailPage() {
     );
   }
 
-  if (!job || !applicant) {
+  if (errorMessage && (!job || !applicant)) {
      return (
       <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold">Applicant or Job Data Not Found</h2>
+        <h2 className="text-xl font-semibold">{errorMessage}</h2>
         <p className="text-muted-foreground">The requested details could not be loaded.</p>
         <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
           Back to Dashboard
@@ -68,6 +80,21 @@ export default function ApplicantDetailPage() {
       </div>
     );
   }
+  
+  if (!job || !applicant) {
+    // Fallback if somehow error isn't set but data is missing
+     return (
+      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold">Applicant or Job Data Not Found</h2>
+        <p className="text-muted-foreground">Essential data is missing.</p>
+        <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
+          Back to Dashboard
+        </Button>
+      </div>
+    );
+  }
+
 
   const renderScoreBar = (skillName: string, score: number) => (
     <div key={skillName} className="mb-3">
@@ -105,7 +132,6 @@ export default function ApplicantDetailPage() {
         </CardHeader>
       </Card>
 
-      {/* AI Analysis & Scores */}
       {applicant.analysisOutput && (
         <Card>
           <CardHeader>
@@ -151,8 +177,6 @@ export default function ApplicantDetailPage() {
         </Card>
       )}
 
-
-      {/* Survey Responses */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><MessageSquare className="text-primary"/> Survey Responses</CardTitle>
@@ -173,7 +197,6 @@ export default function ApplicantDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Job Listing Context */}
       {job.generatedListingText && (
         <Card>
           <CardHeader>
