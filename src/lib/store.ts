@@ -1,3 +1,4 @@
+
 "use client";
 
 import { create } from 'zustand';
@@ -8,6 +9,7 @@ interface AppState {
   jobs: Record<string, Job>;
   addJob: (job: Job) => void;
   updateJob: (jobId: string, updates: Partial<Omit<Job, 'id' | 'applicants' | 'createdAt'>>) => void;
+  deleteJob: (jobId: string) => void;
   addApplicant: (jobId: string, applicant: Applicant) => void;
   updateApplicant: (jobId: string, applicantId: string, updates: Partial<Omit<Applicant, 'id' | 'jobId' | 'submittedAt'>>) => void;
   getJob: (jobId: string) => Job | undefined;
@@ -32,6 +34,13 @@ export const useAppStore = create<AppState>()(
             };
           }
           return state;
+        }),
+      deleteJob: (jobId) =>
+        set((state) => {
+          const { [jobId]: _, ...remainingJobs } = state.jobs;
+          return {
+            jobs: remainingJobs,
+          };
         }),
       addApplicant: (jobId, applicant) =>
         set((state) => {

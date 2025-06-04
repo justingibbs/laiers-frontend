@@ -4,22 +4,36 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAppStore } from '@/lib/store';
 import { useEffect, useState } from 'react';
 import type { Job } from '@/lib/types';
-import { PlusCircle, Users, FileText } from 'lucide-react';
+import { PlusCircle, Users, FileText, Trash2 } from 'lucide-react';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import FormattedDate from '@/components/FormattedDate';
 import ClientOnly from '@/components/ClientOnly';
+import { useToast } from '@/hooks/use-toast';
 
 export default function HomePage() {
   const getAllJobsFromStore = useAppStore((state) => state.getAllJobs);
+  const deleteJobFromStore = useAppStore((state) => state.deleteJob);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const { toast } = useToast();
 
 
   useEffect(() => {
-    // This effect runs only on the client after mount
     setIsLoading(true);
     try {
       const allJobs = getAllJobsFromStore();
@@ -28,9 +42,28 @@ export default function HomePage() {
       console.error("Error fetching jobs from store:", e);
     }
     setIsLoading(false);
-  }, [getAllJobsFromStore]);
+  }, [getAllJobsFromStore, deleteJobFromStore]); // Re-fetch jobs if deleteJobFromStore changes, ensuring UI updates
 
-  // Render loading spinner if isLoading is true (during initial client load or data fetch)
+  const openDeleteDialog = (job: Job) => {
+    setJobToDelete(job);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (jobToDelete) {
+      deleteJobFromStore(jobToDelete.id);
+      toast({
+        title: "Job Deleted",
+        description: `The job "${jobToDelete.title}" has been successfully deleted.`,
+      });
+      // Re-fetch jobs to update the list after deletion
+      const updatedJobs = getAllJobsFromStore();
+      setJobs(updatedJobs);
+      setIsDeleteDialogOpen(false);
+      setJobToDelete(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
@@ -93,15 +126,46 @@ export default function HomePage() {
                       <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                       {job.applicants.length} Applicant{job.applicants.length === 1 ? '' : 's'}
                     </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/job/${job.id}/applicants`}>View Dashboard</Link>
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/job/${job.id}/applicants`}>View Dashboard</Link>
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => openDeleteDialog(job)}
+                      title="Delete job"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardFooter>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      {jobToDelete && (
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the job
+                "<strong className="font-semibold">{jobToDelete.title}</strong>"
+                and all of its associated data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setJobToDelete(null); }}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmDelete}>
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </ClientOnly>
   );
 }
