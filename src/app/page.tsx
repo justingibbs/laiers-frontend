@@ -9,18 +9,19 @@ import { useEffect, useState } from 'react';
 import type { Job } from '@/lib/types';
 import { PlusCircle, Users, FileText } from 'lucide-react';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import FormattedDate from '@/components/FormattedDate';
 
 export default function HomePage() {
-  const jobs = useAppStore((state) => state.getAllJobs());
+  const getAllJobs = useAppStore((state) => state.getAllJobs);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    setJobs(getAllJobs());
+  }, [getAllJobs]);
 
   if (!mounted) {
-    // Return null or a minimal skeleton that won't cause hydration mismatch
-    // For critical pages like dashboard, a full page loader might be better than null if it's guaranteed to match
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <LoadingSpinner size={48} />
@@ -63,7 +64,7 @@ export default function HomePage() {
               <CardHeader>
                 <CardTitle className="font-headline text-xl truncate" title={job.title}>{job.title}</CardTitle>
                 <CardDescription>
-                  Created on: {new Date(job.createdAt).toLocaleDateString()}
+                  Created on: <FormattedDate timestamp={job.createdAt} />
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">

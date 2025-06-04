@@ -14,6 +14,7 @@ import type { Job, Applicant } from '@/lib/types';
 import { Users, TrendingUp, ClipboardCopy, AlertTriangle, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import FormattedDate from '@/components/FormattedDate';
 
 export default function ApplicantDashboardPage() {
   const params = useParams();
@@ -21,7 +22,7 @@ export default function ApplicantDashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const { getJob } = useAppStore();
+  const getJobFromStore = useAppStore((state) => state.getJob);
   const [job, setJob] = useState<Job | null>(null);
   const [sortedApplicants, setSortedApplicants] = useState<Applicant[]>([]);
   const [mounted, setMounted] = useState(false);
@@ -29,26 +30,25 @@ export default function ApplicantDashboardPage() {
 
   useEffect(() => {
     setMounted(true); 
-    const jobData = getJob(jobId);
+    const jobData = getJobFromStore(jobId);
     if (jobData) {
       setJob(jobData);
       const applicantsWithScores = jobData.applicants.filter(app => app.overallScoreData);
       const sorted = [...applicantsWithScores].sort((a, b) => (b.overallScoreData?.overallScore || 0) - (a.overallScoreData?.overallScore || 0));
       setSortedApplicants(sorted);
     } else {
-      // Only toast and redirect if mounted, to avoid issues during SSR or initial client render
-      if (mounted) {
+      if (mounted) { // Only toast and redirect if mounted, to avoid issues during SSR or initial client render
         toast({ variant: "destructive", title: "Error", description: "Job not found." });
         router.push('/');
       }
     }
-  }, [jobId, getJob, mounted]); // Add mounted to dependency array
+  }, [jobId, getJobFromStore, mounted, router, toast]);
 
   useEffect(() => {
-    if (mounted && jobId && typeof window !== 'undefined') {
+    if (jobId && typeof window !== 'undefined') {
       setSurveyLink(`${window.location.origin}/job/${jobId}/take-survey`);
     }
-  }, [mounted, jobId]);
+  }, [jobId]);
 
   const copyToClipboard = (text: string) => {
     if (!text) return;
@@ -68,7 +68,6 @@ export default function ApplicantDashboardPage() {
   }
   
   if (!job) {
-    // This case handles if jobData was not found after mount
     return (
       <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
@@ -112,7 +111,7 @@ export default function ApplicantDashboardPage() {
       </Card>
 
 
-      {job.applicants.filter(app => app.overallScoreData).length === 0 ? ( // Check based on overallScoreData presence for sorting
+      {job.applicants.filter(app => app.overallScoreData).length === 0 ? (
         <Card className="text-center py-12">
            <CardHeader>
             <Users className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
@@ -150,8 +149,8 @@ export default function ApplicantDashboardPage() {
                         {applicant.overallScoreData?.overallScore.toFixed(0) || 'N/A'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground">
-                      {new Date(applicant.submittedAt).toLocaleDateString()}
+                    <TableCell className="text-center">
+                       <FormattedDate timestamp={applicant.submittedAt} className="text-xs text-muted-foreground" />
                     </TableCell>
                     <TableCell className="text-center">
                       <Button asChild variant="ghost" size="sm">
