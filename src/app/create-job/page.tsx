@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -33,6 +34,7 @@ export default function CreateJobPage() {
   const [surveyData, setSurveyData] = useState<CreateSkillsSurveyOutput | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [jobTitle, setJobTitle] = useState<string>("");
+  const [shareableSurveyLink, setShareableSurveyLink] = useState<string>("");
 
 
   const router = useRouter();
@@ -44,6 +46,14 @@ export default function CreateJobPage() {
     resolver: zodResolver(jobDescriptionSchema),
     defaultValues: { jobTitle: "", jobDescription: "" },
   });
+
+  useEffect(() => {
+    if (currentJobId && surveyData && typeof window !== 'undefined') {
+      setShareableSurveyLink(`${window.location.origin}/job/${currentJobId}/take-survey`);
+    } else {
+      setShareableSurveyLink(""); 
+    }
+  }, [currentJobId, surveyData]);
 
   const handleGenerateListing: SubmitHandler<JobDescriptionFormData> = async (data) => {
     setIsLoadingListing(true);
@@ -98,6 +108,7 @@ export default function CreateJobPage() {
   };
   
   const copyToClipboard = (text: string) => {
+    if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
       toast({ title: "Copied!", description: "Link copied to clipboard." });
     }).catch(err => {
@@ -209,10 +220,11 @@ export default function CreateJobPage() {
                 <div className="flex items-center gap-2">
                   <Input
                     readOnly
-                    value={`${window.location.origin}/job/${currentJobId}/take-survey`}
+                    value={shareableSurveyLink}
                     className="bg-muted"
+                    disabled={!shareableSurveyLink}
                   />
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`${window.location.origin}/job/${currentJobId}/take-survey`)}>
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(shareableSurveyLink)} disabled={!shareableSurveyLink}>
                     <ClipboardCopy className="h-4 w-4" />
                   </Button>
                 </div>
