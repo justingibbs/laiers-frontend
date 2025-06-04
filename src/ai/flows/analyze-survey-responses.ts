@@ -26,7 +26,7 @@ export type AnalyzeSurveyResponsesInput = z.infer<typeof AnalyzeSurveyResponsesI
 
 const AnalyzeSurveyResponsesOutputSchema = z.object({
   analysis: z.string().describe('An analysis of the survey responses, providing insights into the job seeker\'s soft skill proficiency.'),
-  scores: z.record(z.string(), z.number()).describe('A score for each soft skill, based on the survey responses.'),
+  scores: z.record(z.string(), z.number()).describe('A score for each soft skill (0-100), based on the survey responses.'),
   summary: z.string().describe('A summary of the survey responses with an overall score.'),
 });
 
@@ -58,6 +58,37 @@ Ensure that the analysis and scores are aligned and well-justified by the provid
 
 Output the analysis, scores, and a summary with an overall score.
 
-Ensure that the scores are returned as key value pairs in the ` + '`scores`' + ` field.
-For example, the scores field should look like this:
-` + '`{ 
+The \`scores\` field in your output must be a JSON object where keys are the exact soft skill names provided in the "Top Soft Skills" section, and values are the numerical scores (0-100).
+For example, if the top soft skills are "Communication" and "Problem-Solving", the \`scores\` field should look like:
+\`\`\`json
+{
+  "Communication": 85,
+  "Problem-Solving": 90
+}
+\`\`\`
+Do not include any other text or explanations around the \`scores\` JSON object itself. It should be directly parsable as defined in the output schema.
+`,
+});
+
+const analyzeSurveyResponsesFlow = ai.defineFlow(
+  {
+    name: 'analyzeSurveyResponsesFlow',
+    inputSchema: AnalyzeSurveyResponsesInputSchema,
+    outputSchema: AnalyzeSurveyResponsesOutputSchema,
+  },
+  async (input: AnalyzeSurveyResponsesInput) => {
+    const {output} = await prompt(input);
+    if (!output) {
+      throw new Error('Failed to get a response from the AI model for survey analysis.');
+    }
+    // Ensure scores object is not empty or malformed, if possible, or rely on Zod schema validation.
+    // For example, check if output.scores exists and is an object.
+    if (typeof output.scores !== 'object' || output.scores === null) {
+        // Attempt to provide a default or handle error appropriately
+        console.warn('Scores field is missing or not an object in AI response. Defaulting scores or re-evaluating prompt might be needed.');
+        // Depending on requirements, you might throw an error or try to recover.
+        // For now, we'll pass it through and let Zod validation catch it if it's fundamentally wrong.
+    }
+    return output;
+  }
+);
