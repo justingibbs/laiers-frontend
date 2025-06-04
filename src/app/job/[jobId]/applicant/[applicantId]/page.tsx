@@ -12,9 +12,10 @@ import { useAppStore } from '@/lib/store';
 import type { Job, Applicant } from '@/lib/types';
 import SkillIcon from '@/components/SkillIcon';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { BarChart, Brain, FileText, MessageSquare, Users, ShieldCheck, Lightbulb, Repeat, Sparkles, ChevronLeft, Star, AlertTriangle } from 'lucide-react';
+import { BarChart, Brain, FileText, MessageSquare, ChevronLeft, Star, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import ClientOnly from '@/components/ClientOnly';
 
 export default function ApplicantDetailPage() {
   const params = useParams();
@@ -30,6 +31,7 @@ export default function ApplicantDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    // This effect runs only on client
     setIsLoading(true);
     const jobData = getJobFromStore(jobId);
     const applicantData = getApplicantFromStore(jobId, applicantId);
@@ -38,7 +40,7 @@ export default function ApplicantDetailPage() {
       setJob(jobData);
     } else {
       setErrorMessage("Job not found.");
-      setApplicant(null); // Ensure applicant is also nulled if job not found
+      setApplicant(null); 
       setIsLoading(false);
       return;
     }
@@ -53,13 +55,14 @@ export default function ApplicantDetailPage() {
   }, [jobId, applicantId, getJobFromStore, getApplicantFromStore]);
 
   useEffect(() => {
+    // This effect runs only on client
     if (errorMessage && !isLoading) {
       toast({ variant: "destructive", title: "Error", description: errorMessage });
-      // Redirect to applicants page if job or applicant is not found
       router.push(jobId ? `/job/${jobId}/applicants` : '/');
     }
   }, [errorMessage, isLoading, router, toast, jobId]);
 
+  // Render loading spinner if isLoading is true (during initial client load or data fetch)
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
@@ -70,31 +73,33 @@ export default function ApplicantDetailPage() {
 
   if (errorMessage && (!job || !applicant)) {
      return (
-      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold">{errorMessage}</h2>
-        <p className="text-muted-foreground">The requested details could not be loaded.</p>
-        <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
-          Back to Dashboard
-        </Button>
-      </div>
+      <ClientOnly>
+        <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h2 className="text-xl font-semibold">{errorMessage}</h2>
+          <p className="text-muted-foreground">The requested details could not be loaded.</p>
+          <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
+            Back to Dashboard
+          </Button>
+        </div>
+      </ClientOnly>
     );
   }
   
   if (!job || !applicant) {
-    // Fallback if somehow error isn't set but data is missing
      return (
-      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold">Applicant or Job Data Not Found</h2>
-        <p className="text-muted-foreground">Essential data is missing.</p>
-        <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
-          Back to Dashboard
-        </Button>
-      </div>
+      <ClientOnly>
+        <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)]">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h2 className="text-xl font-semibold">Applicant or Job Data Not Found</h2>
+          <p className="text-muted-foreground">Essential data is missing.</p>
+          <Button onClick={() => router.push(jobId ? `/job/${jobId}/applicants` : '/')} className="mt-4">
+            Back to Dashboard
+          </Button>
+        </div>
+      </ClientOnly>
     );
   }
-
 
   const renderScoreBar = (skillName: string, score: number) => (
     <div key={skillName} className="mb-3">
@@ -110,105 +115,107 @@ export default function ApplicantDetailPage() {
   );
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
-      <Button asChild variant="outline" size="sm" className="mb-4">
-        <Link href={`/job/${jobId}/applicants`}>
-          <ChevronLeft className="mr-1 h-4 w-4" /> Back to Applicant Dashboard
-        </Link>
-      </Button>
+    <ClientOnly>
+      <div className="space-y-8 max-w-4xl mx-auto">
+        <Button asChild variant="outline" size="sm" className="mb-4">
+          <Link href={`/job/${jobId}/applicants`}>
+            <ChevronLeft className="mr-1 h-4 w-4" /> Back to Applicant Dashboard
+          </Link>
+        </Button>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-3xl font-headline">{applicant.name}</CardTitle>
-          <CardDescription>Detailed Review for Job: <span className="font-semibold">{job.title}</span></CardDescription>
-          {applicant.overallScoreData && (
-            <div className="flex items-center gap-2 pt-2">
-              <Star className="h-6 w-6 text-yellow-400 fill-yellow-400" />
-              <span className="text-xl font-bold text-primary">
-                Overall Score: {applicant.overallScoreData.overallScore.toFixed(0)}/100
-              </span>
-            </div>
-          )}
-        </CardHeader>
-      </Card>
-
-      {applicant.analysisOutput && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><BarChart className="text-primary"/> AI-Powered Insights</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
+            <CardTitle className="text-3xl font-headline">{applicant.name}</CardTitle>
+            <CardDescription>Detailed Review for Job: <span className="font-semibold">{job.title}</span></CardDescription>
             {applicant.overallScoreData && (
-              <div>
-                <h3 className="font-semibold mb-2 text-lg">Overall Summary:</h3>
-                <p className="text-sm p-4 border rounded-md bg-secondary/30 whitespace-pre-line">{applicant.overallScoreData.summary}</p>
+              <div className="flex items-center gap-2 pt-2">
+                <Star className="h-6 w-6 text-yellow-400 fill-yellow-400" />
+                <span className="text-xl font-bold text-primary">
+                  Overall Score: {applicant.overallScoreData.overallScore.toFixed(0)}/100
+                </span>
               </div>
             )}
-            
-            <div>
-              <h3 className="font-semibold mb-2 text-lg">Soft Skill Scores:</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                {Object.entries(applicant.analysisOutput.scores).map(([skill, score]) =>
-                  renderScoreBar(skill, score)
-                )}
-              </div>
-            </div>
-
-            {applicant.analysisOutput.analysis && (
-              <div>
-                <h3 className="font-semibold mb-2 text-lg">Detailed Analysis:</h3>
-                <p className="text-sm p-4 border rounded-md bg-secondary/30 whitespace-pre-line">{applicant.analysisOutput.analysis}</p>
-              </div>
-            )}
-          </CardContent>
+          </CardHeader>
         </Card>
-      )}
-      
-      {!applicant.analysisOutput && (
-         <Card className="border-orange-500 border-2">
+
+        {applicant.analysisOutput && (
+          <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-orange-700">
-                    <Brain className="h-5 w-5" /> Analysis Pending or Failed
-                </CardTitle>
-                <CardDescription>
-                    The detailed AI analysis for this applicant is not yet available. It might still be processing or an error occurred.
-                </CardDescription>
+              <CardTitle className="flex items-center gap-2"><BarChart className="text-primary"/> AI-Powered Insights</CardTitle>
             </CardHeader>
-        </Card>
-      )}
+            <CardContent className="space-y-6">
+              {applicant.overallScoreData && (
+                <div>
+                  <h3 className="font-semibold mb-2 text-lg">Overall Summary:</h3>
+                  <p className="text-sm p-4 border rounded-md bg-secondary/30 whitespace-pre-line">{applicant.overallScoreData.summary}</p>
+                </div>
+              )}
+              
+              <div>
+                <h3 className="font-semibold mb-2 text-lg">Soft Skill Scores:</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                  {Object.entries(applicant.analysisOutput.scores).map(([skill, score]) =>
+                    renderScoreBar(skill, score)
+                  )}
+                </div>
+              </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><MessageSquare className="text-primary"/> Survey Responses</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Accordion type="single" collapsible className="w-full">
-            {applicant.responses.map((response, index) => (
-              <AccordionItem value={`item-${index}`} key={index}>
-                <AccordionTrigger className="text-left hover:no-underline">
-                  <span className="font-medium">Q{index + 1}:</span> {response.question}
-                </AccordionTrigger>
-                <AccordionContent className="p-4 bg-secondary/30 rounded-md whitespace-pre-line">
-                  {response.answer}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </CardContent>
-      </Card>
+              {applicant.analysisOutput.analysis && (
+                <div>
+                  <h3 className="font-semibold mb-2 text-lg">Detailed Analysis:</h3>
+                  <p className="text-sm p-4 border rounded-md bg-secondary/30 whitespace-pre-line">{applicant.analysisOutput.analysis}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        
+        {!applicant.analysisOutput && (
+          <Card className="border-orange-500 border-2">
+              <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-700">
+                      <Brain className="h-5 w-5" /> Analysis Pending or Failed
+                  </CardTitle>
+                  <CardDescription>
+                      The detailed AI analysis for this applicant is not yet available. It might still be processing or an error occurred.
+                  </CardDescription>
+              </CardHeader>
+          </Card>
+        )}
 
-      {job.generatedListingText && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><FileText className="text-primary"/> Original Job Listing (for context)</CardTitle>
+            <CardTitle className="flex items-center gap-2"><MessageSquare className="text-primary"/> Survey Responses</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="prose prose-sm max-w-none p-4 border rounded-md bg-secondary/30 max-h-72 overflow-y-auto">
-              <pre className="whitespace-pre-wrap font-body">{job.generatedListingText}</pre>
-            </div>
+            <Accordion type="single" collapsible className="w-full">
+              {applicant.responses.map((response, index) => (
+                <AccordionItem value={`item-${index}`} key={index}>
+                  <AccordionTrigger className="text-left hover:no-underline">
+                    <span className="font-medium">Q{index + 1}:</span> {response.question}
+                  </AccordionTrigger>
+                  <AccordionContent className="p-4 bg-secondary/30 rounded-md whitespace-pre-line">
+                    {response.answer}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           </CardContent>
         </Card>
-      )}
-    </div>
+
+        {job.generatedListingText && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><FileText className="text-primary"/> Original Job Listing (for context)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="prose prose-sm max-w-none p-4 border rounded-md bg-secondary/30 max-h-72 overflow-y-auto">
+                <pre className="whitespace-pre-wrap font-body">{job.generatedListingText}</pre>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </ClientOnly>
   );
 }

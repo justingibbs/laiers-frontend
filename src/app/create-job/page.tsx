@@ -20,6 +20,7 @@ import { useAppStore } from '@/lib/store';
 import type { Job as JobType } from '@/lib/types';
 import SkillIcon from '@/components/SkillIcon';
 import { CheckCircle, ClipboardCopy, Lightbulb, ListChecks, ArrowRight } from 'lucide-react';
+import ClientOnly from '@/components/ClientOnly';
 
 const jobDescriptionSchema = z.object({
   jobTitle: z.string().min(3, { message: "Job title must be at least 3 characters." }),
@@ -36,7 +37,6 @@ export default function CreateJobPage() {
   const [jobTitle, setJobTitle] = useState<string>("");
   const [shareableSurveyLink, setShareableSurveyLink] = useState<string>("");
 
-
   const router = useRouter();
   const { toast } = useToast();
   const addJob = useAppStore((state) => state.addJob);
@@ -48,10 +48,11 @@ export default function CreateJobPage() {
   });
 
   useEffect(() => {
+    // Ensure window is defined (runs only on client)
     if (currentJobId && surveyData && typeof window !== 'undefined') {
       setShareableSurveyLink(`${window.location.origin}/job/${currentJobId}/take-survey`);
     } else {
-      setShareableSurveyLink(""); 
+      setShareableSurveyLink("");
     }
   }, [currentJobId, surveyData]);
 
@@ -108,7 +109,7 @@ export default function CreateJobPage() {
   };
   
   const copyToClipboard = (text: string) => {
-    if (!text) return;
+    if (!text || typeof navigator === 'undefined' || !navigator.clipboard) return;
     navigator.clipboard.writeText(text).then(() => {
       toast({ title: "Copied!", description: "Link copied to clipboard." });
     }).catch(err => {
@@ -117,126 +118,128 @@ export default function CreateJobPage() {
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-headline font-bold text-center">Create New Job & Survey</h1>
+    <ClientOnly>
+      <div className="space-y-8 max-w-4xl mx-auto">
+        <h1 className="text-3xl font-headline font-bold text-center">Create New Job & Survey</h1>
 
-      {/* Step 1: Job Description */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Lightbulb className="text-primary"/> Step 1: Define the Role</CardTitle>
-          <CardDescription>Provide a title and detailed description for the job you want to fill.</CardDescription>
-        </CardHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleGenerateListing)}>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="jobTitle"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Job Title</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Senior Software Engineer" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="jobDescription"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Job Description</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Describe the responsibilities, qualifications, and company culture..." {...field} rows={8} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" disabled={isLoadingListing} className="w-full sm:w-auto">
-                {isLoadingListing ? <LoadingSpinner /> : "Generate Job Listing"}
-                {!isLoadingListing && <ArrowRight className="ml-2 h-4 w-4" />}
-              </Button>
-            </CardFooter>
-          </form>
-        </Form>
-      </Card>
-
-      {/* Generated Job Listing */}
-      {generatedListing && (
+        {/* Step 1: Job Description */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><CheckCircle className="text-green-500"/> Generated Job Listing</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Lightbulb className="text-primary"/> Step 1: Define the Role</CardTitle>
+            <CardDescription>Provide a title and detailed description for the job you want to fill.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="prose prose-sm max-w-none p-4 border rounded-md bg-secondary/30 max-h-96 overflow-y-auto">
-              <pre className="whitespace-pre-wrap font-body">{generatedListing}</pre>
-            </div>
-          </CardContent>
-          <CardFooter>
-             <Button onClick={handleCreateSurvey} disabled={isLoadingSurvey || !currentJobId} className="w-full sm:w-auto">
-                {isLoadingSurvey ? <LoadingSpinner /> : "Create Skills Survey"}
-                {!isLoadingSurvey && <ArrowRight className="ml-2 h-4 w-4" />}
-              </Button>
-          </CardFooter>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleGenerateListing)}>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="jobTitle"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Job Title</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Senior Software Engineer" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="jobDescription"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Job Description</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Describe the responsibilities, qualifications, and company culture..." {...field} rows={8} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+              <CardFooter>
+                <Button type="submit" disabled={isLoadingListing} className="w-full sm:w-auto">
+                  {isLoadingListing ? <LoadingSpinner /> : "Generate Job Listing"}
+                  {!isLoadingListing && <ArrowRight className="ml-2 h-4 w-4" />}
+                </Button>
+              </CardFooter>
+            </form>
+          </Form>
         </Card>
-      )}
 
-      {/* Step 2: Skills Survey */}
-      {surveyData && currentJobId && (
-         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><ListChecks className="text-primary"/> Step 2: Skills Survey Created</CardTitle>
-            <CardDescription>Based on the job listing, we've identified key soft skills and generated survey questions.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <h3 className="font-semibold mb-2 text-lg">Top 3 Soft Skills Identified:</h3>
-              <ul className="space-y-1 list-inside">
-                {surveyData.topSkills.map((skill) => (
-                  <li key={skill} className="flex items-center gap-2 p-2 bg-secondary/30 rounded-md">
-                    <SkillIcon skill={skill} className="h-5 w-5 text-accent" />
-                    <span>{skill}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2 text-lg">Survey Questions ({surveyData.surveyQuestions.length}):</h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto p-4 border rounded-md bg-secondary/30">
-                {surveyData.surveyQuestions.map((q, index) => (
-                  <p key={index} className="text-sm p-2 border-b border-border/50 last:border-b-0">
-                    {index + 1}. {q}
-                  </p>
-                ))}
+        {/* Generated Job Listing */}
+        {generatedListing && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><CheckCircle className="text-green-500"/> Generated Job Listing</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="prose prose-sm max-w-none p-4 border rounded-md bg-secondary/30 max-h-96 overflow-y-auto">
+                <pre className="whitespace-pre-wrap font-body">{generatedListing}</pre>
               </div>
-            </div>
-            <div className="mt-4">
-                <h3 className="font-semibold mb-2 text-lg">Shareable Survey Link:</h3>
-                <div className="flex items-center gap-2">
-                  <Input
-                    readOnly
-                    value={shareableSurveyLink}
-                    className="bg-muted"
-                    disabled={!shareableSurveyLink}
-                  />
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(shareableSurveyLink)} disabled={!shareableSurveyLink}>
-                    <ClipboardCopy className="h-4 w-4" />
-                  </Button>
+            </CardContent>
+            <CardFooter>
+              <Button onClick={handleCreateSurvey} disabled={isLoadingSurvey || !currentJobId} className="w-full sm:w-auto">
+                  {isLoadingSurvey ? <LoadingSpinner /> : "Create Skills Survey"}
+                  {!isLoadingSurvey && <ArrowRight className="ml-2 h-4 w-4" />}
+                </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {/* Step 2: Skills Survey */}
+        {surveyData && currentJobId && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ListChecks className="text-primary"/> Step 2: Skills Survey Created</CardTitle>
+              <CardDescription>Based on the job listing, we've identified key soft skills and generated survey questions.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <h3 className="font-semibold mb-2 text-lg">Top 3 Soft Skills Identified:</h3>
+                <ul className="space-y-1 list-inside">
+                  {surveyData.topSkills.map((skill) => (
+                    <li key={skill} className="flex items-center gap-2 p-2 bg-secondary/30 rounded-md">
+                      <SkillIcon skill={skill} className="h-5 w-5 text-accent" />
+                      <span>{skill}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 text-lg">Survey Questions ({surveyData.surveyQuestions.length}):</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto p-4 border rounded-md bg-secondary/30">
+                  {surveyData.surveyQuestions.map((q, index) => (
+                    <p key={index} className="text-sm p-2 border-b border-border/50 last:border-b-0">
+                      {index + 1}. {q}
+                    </p>
+                  ))}
                 </div>
               </div>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={handleFinalize} className="w-full sm:w-auto bg-accent hover:bg-accent/90">
-              View Applicant Dashboard <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </CardFooter>
-        </Card>
-      )}
-    </div>
+              <div className="mt-4">
+                  <h3 className="font-semibold mb-2 text-lg">Shareable Survey Link:</h3>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={shareableSurveyLink}
+                      className="bg-muted"
+                      disabled={!shareableSurveyLink}
+                    />
+                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(shareableSurveyLink)} disabled={!shareableSurveyLink}>
+                      <ClipboardCopy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+            </CardContent>
+            <CardFooter>
+              <Button onClick={handleFinalize} className="w-full sm:w-auto bg-accent hover:bg-accent/90">
+                View Applicant Dashboard <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+      </div>
+    </ClientOnly>
   );
 }

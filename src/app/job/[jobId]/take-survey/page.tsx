@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
+import { useForm, type SubmitHandler } from 'react-hook-form'; // Removed Controller as it's not used
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { analyzeSurveyResponses } from '@/ai/flows/analyze-survey-responses';
 import { summarizeSurveyResponses } from '@/ai/flows/summarize-survey-responses';
 import SkillIcon from '@/components/SkillIcon';
 import { Send, CheckCircle, User, AlertTriangle } from 'lucide-react';
+import ClientOnly from '@/components/ClientOnly';
 
 const createSurveySchema = (questions: string[]) => {
   const schemaFields: Record<string, z.ZodString> = {
@@ -30,7 +31,10 @@ const createSurveySchema = (questions: string[]) => {
   return z.object(schemaFields);
 };
 
-type SurveyFormData = z.infer<ReturnType<typeof createSurveySchema>>;
+// Define SurveyFormData outside the component to prevent re-creation on every render
+// This will be updated dynamically via a useEffect hook if questions change
+type SurveyFormData = Record<string, string> & { applicantName: string };
+
 
 export default function TakeSurveyPage() {
   const params = useParams();
@@ -40,41 +44,47 @@ export default function TakeSurveyPage() {
 
   const { getJob: getJobFromStore, addApplicant, updateApplicant } = useAppStore();
   const [job, setJob] = useState<Job | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Renamed from isLoading for clarity
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submissionSummary, setSubmissionSummary] = useState<string | null>(null);
   const [isLoadingJob, setIsLoadingJob] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [surveyQuestions, setSurveyQuestions] = useState<string[]>([]);
-  const surveySchema = createSurveySchema(surveyQuestions); // Schema is now state-dependent
-
+  
+  // Form instance using dynamic schema
   const form = useForm<SurveyFormData>({
-    resolver: zodResolver(surveySchema),
+    resolver: zodResolver(createSurveySchema(surveyQuestions)), // Initialize with current questions
     defaultValues: { applicantName: "" }, 
   });
 
   useEffect(() => {
+    // This effect runs only on client
     setIsLoadingJob(true);
     const jobData = getJobFromStore(jobId);
     if (jobData) {
       setJob(jobData);
-      setSurveyQuestions(jobData.survey?.questions || []);
+      const questions = jobData.survey?.questions || [];
+      setSurveyQuestions(questions);
+      // Reset form with new questions and default values
+      form.reset({ 
+        applicantName: "", 
+        ...questions.reduce((acc, _, index) => ({...acc, [`answer${index}`]: ""}), {}) 
+      });
+       // Update resolver with the new schema based on fetched questions
+      form.trigger().then(() => { // Ensure validation triggers after reset if needed.
+        (form as any).resolver = zodResolver(createSurveySchema(questions));
+      });
       setErrorMessage(null);
     } else {
       setErrorMessage("Job not found or survey is not available for this job.");
     }
     setIsLoadingJob(false);
-  }, [jobId, getJobFromStore]);
-
-  // Reset form when survey questions change (e.g., job loaded)
-  useEffect(() => {
-    form.reset({ applicantName: "", ...surveyQuestions.reduce((acc, _, index) => ({...acc, [`answer${index}`]: ""}), {}) });
-  }, [surveyQuestions, form]);
-
+  }, [jobId, getJobFromStore, form]); // form added to dependency array
 
   useEffect(() => {
-    if (errorMessage && !isLoadingJob && !job) { // Only redirect if job truly not found after loading attempt
+    // This effect runs only on client
+    if (errorMessage && !isLoadingJob && !job) {
       toast({ variant: "destructive", title: "Error", description: errorMessage });
       router.push('/');
     }
@@ -90,7 +100,7 @@ export default function TakeSurveyPage() {
 
     const currentResponses = job.survey.questions.map((question, index) => ({
       question,
-      answer: data[`answer${index}` as keyof SurveyFormData] as string,
+      answer: data[`answer${index}`] as string, // data is already SurveyFormData
     }));
 
     const applicantId = `app-${Date.now()}`;
@@ -130,124 +140,131 @@ export default function TakeSurveyPage() {
     } catch (error) {
       console.error("Error processing survey:", error);
       toast({ variant: "destructive", title: "Error", description: "Failed to process survey responses." });
-      // Optionally, remove the applicant or mark them as failed processing
     }
     setIsSubmitting(false);
   };
 
+  // Render loading spinner if isLoadingJob is true
   if (isLoadingJob) {
     return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><LoadingSpinner size={48} /></div>;
   }
 
-  if (errorMessage && !job) { // If error message is set and job is not loaded (e.g. job not found)
+  if (errorMessage && !job) {
      return (
-      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Survey Not Available</h1>
-        <p className="text-muted-foreground mb-4">{errorMessage}</p>
-        <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
-      </div>
+      <ClientOnly>
+        <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Survey Not Available</h1>
+          <p className="text-muted-foreground mb-4">{errorMessage}</p>
+          <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
+        </div>
+      </ClientOnly>
     );
   }
   
-  if (!job?.survey?.questions || job.survey.questions.length === 0) {
+  if (!job?.survey?.questions || surveyQuestions.length === 0) { // Use state surveyQuestions
      return (
-      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
-        <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Survey Not Configured</h1>
-        <p className="text-muted-foreground mb-4">This job does not have an active survey or questions are missing.</p>
-        <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
-      </div>
+      <ClientOnly>
+        <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
+          <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Survey Not Configured</h1>
+          <p className="text-muted-foreground mb-4">This job does not have an active survey or questions are missing.</p>
+          <Button onClick={() => router.push('/')} className="mt-4">Back to Home</Button>
+        </div>
+      </ClientOnly>
     );
   }
 
-
   if (isSubmitted) {
     return (
-      <Card className="max-w-2xl mx-auto my-8">
-        <CardHeader className="text-center">
-          <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
-          <CardTitle className="text-2xl">Thank You for Your Submission!</CardTitle>
-          <CardDescription>Your responses have been recorded.</CardDescription>
-        </CardHeader>
-        {submissionSummary && (
-          <CardContent>
-            <h3 className="font-semibold mb-2 text-lg">Your Quick Summary:</h3>
-            <p className="text-sm p-4 border rounded-md bg-secondary/30 whitespace-pre-line">{submissionSummary}</p>
-          </CardContent>
-        )}
-        <CardFooter className="flex justify-center">
-          <Button onClick={() => router.push('/')}>Return to Homepage</Button>
-        </CardFooter>
-      </Card>
+      <ClientOnly>
+        <Card className="max-w-2xl mx-auto my-8">
+          <CardHeader className="text-center">
+            <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
+            <CardTitle className="text-2xl">Thank You for Your Submission!</CardTitle>
+            <CardDescription>Your responses have been recorded.</CardDescription>
+          </CardHeader>
+          {submissionSummary && (
+            <CardContent>
+              <h3 className="font-semibold mb-2 text-lg">Your Quick Summary:</h3>
+              <p className="text-sm p-4 border rounded-md bg-secondary/30 whitespace-pre-line">{submissionSummary}</p>
+            </CardContent>
+          )}
+          <CardFooter className="flex justify-center">
+            <Button onClick={() => router.push('/')}>Return to Homepage</Button>
+          </CardFooter>
+        </Card>
+      </ClientOnly>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 py-8">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl font-headline">Skills Survey: {job.title}</CardTitle>
-          <CardDescription>Please answer the following questions thoughtfully. Your responses will help us understand your approach to various situations.</CardDescription>
-          {job.survey?.topSkills && (
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold">Key Skills Assessed:</h3>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {job.survey.topSkills.map(skill => (
-                  <span key={skill} className="flex items-center gap-1 text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
-                    <SkillIcon skill={skill} className="h-3 w-3" />
-                    {skill}
-                  </span>
-                ))}
+    <ClientOnly>
+      <div className="max-w-2xl mx-auto space-y-8 py-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl font-headline">Skills Survey: {job.title}</CardTitle>
+            <CardDescription>Please answer the following questions thoughtfully. Your responses will help us understand your approach to various situations.</CardDescription>
+            {job.survey?.topSkills && (
+              <div className="pt-2">
+                <h3 className="text-sm font-semibold">Key Skills Assessed:</h3>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {job.survey.topSkills.map(skill => (
+                    <span key={skill} className="flex items-center gap-1 text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
+                      <SkillIcon skill={skill} className="h-3 w-3" />
+                      {skill}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </CardHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmitSurvey)}>
-            <CardContent className="space-y-6">
-              <FormField
-                control={form.control}
-                name="applicantName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-base">Your Name</FormLabel>
-                    <FormControl>
-                      <div className="flex items-center gap-2">
-                        <User className="h-5 w-5 text-muted-foreground" />
-                        <Input placeholder="Enter your full name" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {surveyQuestions.map((question, index) => (
+            )}
+          </CardHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmitSurvey)}>
+              <CardContent className="space-y-6">
                 <FormField
-                  key={index}
                   control={form.control}
-                  name={`answer${index}` as keyof SurveyFormData}
+                  name="applicantName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-base">Question {index + 1}: {question}</FormLabel>
+                      <FormLabel className="text-base">Your Name</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Your detailed answer..." {...field} rows={5} />
+                        <div className="flex items-center gap-2">
+                          <User className="h-5 w-5 text-muted-foreground" />
+                          <Input placeholder="Enter your full name" {...field} />
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              ))}
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" disabled={isSubmitting} className="w-full">
-                {isSubmitting ? <LoadingSpinner /> : "Submit Responses"}
-                {!isSubmitting && <Send className="ml-2 h-4 w-4" />}
-              </Button>
-            </CardFooter>
-          </form>
-        </Form>
-      </Card>
-    </div>
+                {surveyQuestions.map((question, index) => (
+                  <FormField
+                    key={index}
+                    control={form.control}
+                    name={`answer${index}`} // Name is now just a string
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-base">Question {index + 1}: {question}</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Your detailed answer..." {...field} rows={5} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </CardContent>
+              <CardFooter>
+                <Button type="submit" disabled={isSubmitting} className="w-full">
+                  {isSubmitting ? <LoadingSpinner /> : "Submit Responses"}
+                  {!isSubmitting && <Send className="ml-2 h-4 w-4" />}
+                </Button>
+              </CardFooter>
+            </form>
+          </Form>
+        </Card>
+      </div>
+    </ClientOnly>
   );
 }
