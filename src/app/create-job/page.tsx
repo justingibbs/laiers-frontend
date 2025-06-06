@@ -34,13 +34,14 @@ export default function CreateJobPage() {
   const [generatedListing, setGeneratedListing] = useState<string | null>(null);
   const [surveyData, setSurveyData] = useState<CreateSkillsSurveyOutput | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [jobTitle, setJobTitle] = useState<string>("");
+  const [_jobTitle, setJobTitle] = useState<string>(""); // Renamed to avoid conflict with form
   const [shareableSurveyLink, setShareableSurveyLink] = useState<string>("");
 
   const router = useRouter();
   const { toast } = useToast();
-  const addJob = useAppStore((state) => state.addJob);
-  const updateJob = useAppStore((state) => state.updateJob);
+  const createJobInStore = useAppStore((state) => state.createJob);
+  const updateJobInStore = useAppStore((state) => state.updateJob);
+  const storeIsLoading = useAppStore((state) => state.isLoading);
 
   const form = useForm<JobDescriptionFormData>({
     resolver: zodResolver(jobDescriptionSchema),
@@ -48,7 +49,6 @@ export default function CreateJobPage() {
   });
 
   useEffect(() => {
-    // Ensure window is defined (runs only on client)
     if (currentJobId && surveyData && typeof window !== 'undefined') {
       setShareableSurveyLink(`${window.location.origin}/job/${currentJobId}/take-survey`);
     } else {
@@ -66,23 +66,24 @@ export default function CreateJobPage() {
     try {
       const result = await generateJobListing({ jobDescription: data.jobDescription });
       setGeneratedListing(result.jobListing);
-      const newJobId = `job-${Date.now()}`;
-      setCurrentJobId(newJobId);
       
-      const newJob: JobType = {
-        id: newJobId,
+      const newJobData = {
         title: data.jobTitle,
         descriptionInput: data.jobDescription,
         generatedListingText: result.jobListing,
-        applicants: [],
-        createdAt: Date.now(),
+        // survey and applicants will be handled later or initialized in Firestore service
       };
-      addJob(newJob);
+      const newJobId = await createJobInStore(newJobData);
 
-      toast({ title: "Success", description: "Job listing generated!" });
+      if (newJobId) {
+        setCurrentJobId(newJobId);
+        toast({ title: "Success", description: "Job listing generated and saved!" });
+      } else {
+        throw new Error("Failed to save job listing.");
+      }
     } catch (error) {
-      console.error("Error generating job listing:", error);
-      toast({ variant: "destructive", title: "Error", description: "Failed to generate job listing." });
+      console.error("Error generating or saving job listing:", error);
+      toast({ variant: "destructive", title: "Error", description: (error as Error).message || "Failed to generate job listing." });
     }
     setIsLoadingListing(false);
   };
@@ -93,12 +94,12 @@ export default function CreateJobPage() {
     try {
       const result = await createSkillsSurvey({ jobListing: generatedListing });
       setSurveyData(result);
-      updateJob(currentJobId, { survey: result });
-      toast({ title: "Success", description: "Skills survey created!" });
+      await updateJobInStore(currentJobId, { survey: result });
+      toast({ title: "Success", description: "Skills survey created and saved!" });
     } catch (error)
     {
       console.error("Error creating skills survey:", error);
-      toast({ variant: "destructive", title: "Error", description: "Failed to create skills survey." });
+      toast({ variant: "destructive", title: "Error", description: (error as Error).message || "Failed to create skills survey." });
     }
     setIsLoadingSurvey(false);
   };
@@ -117,12 +118,13 @@ export default function CreateJobPage() {
     });
   };
 
+  const pageLoading = isLoadingListing || isLoadingSurvey || storeIsLoading;
+
   return (
     <ClientOnly>
       <div className="space-y-8 max-w-4xl mx-auto">
         <h1 className="text-3xl font-headline font-bold text-center">Create New Job & Survey</h1>
 
-        {/* Step 1: Job Description */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Lightbulb className="text-primary"/> Step 1: Define the Role</CardTitle>
@@ -159,7 +161,7 @@ export default function CreateJobPage() {
                 />
               </CardContent>
               <CardFooter>
-                <Button type="submit" disabled={isLoadingListing} className="w-full sm:w-auto">
+                <Button type="submit" disabled={pageLoading} className="w-full sm:w-auto">
                   {isLoadingListing ? <LoadingSpinner /> : "Generate Job Listing"}
                   {!isLoadingListing && <ArrowRight className="ml-2 h-4 w-4" />}
                 </Button>
@@ -168,7 +170,6 @@ export default function CreateJobPage() {
           </Form>
         </Card>
 
-        {/* Generated Job Listing */}
         {generatedListing && (
           <Card>
             <CardHeader>
@@ -180,7 +181,7 @@ export default function CreateJobPage() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleCreateSurvey} disabled={isLoadingSurvey || !currentJobId} className="w-full sm:w-auto">
+              <Button onClick={handleCreateSurvey} disabled={pageLoading || !currentJobId} className="w-full sm:w-auto">
                   {isLoadingSurvey ? <LoadingSpinner /> : "Create Skills Survey"}
                   {!isLoadingSurvey && <ArrowRight className="ml-2 h-4 w-4" />}
                 </Button>
@@ -188,12 +189,11 @@ export default function CreateJobPage() {
           </Card>
         )}
 
-        {/* Step 2: Skills Survey */}
         {surveyData && currentJobId && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ListChecks className="text-primary"/> Step 2: Skills Survey Created</CardTitle>
-              <CardDescription>Based on the job listing, we've identified key soft skills and generated survey questions.</CardDescription>
+              <CardDescription>Based on the job listing, we've identified key soft skills and generated survey questions. This survey is now saved.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
@@ -233,7 +233,7 @@ export default function CreateJobPage() {
                 </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleFinalize} className="w-full sm:w-auto bg-accent hover:bg-accent/90">
+              <Button onClick={handleFinalize} className="w-full sm:w-auto bg-accent hover:bg-accent/90" disabled={pageLoading}>
                 View Applicant Dashboard <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </CardFooter>

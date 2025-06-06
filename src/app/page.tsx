@@ -17,58 +17,74 @@ import {
 import { useAppStore } from '@/lib/store';
 import { useEffect, useState } from 'react';
 import type { Job } from '@/lib/types';
-import { PlusCircle, Users, FileText, Trash2 } from 'lucide-react';
+import { PlusCircle, Users, FileText, Trash2, AlertTriangle } from 'lucide-react';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import FormattedDate from '@/components/FormattedDate';
 import ClientOnly from '@/components/ClientOnly';
 import { useToast } from '@/hooks/use-toast';
 
 export default function HomePage() {
-  const getAllJobsFromStore = useAppStore((state) => state.getAllJobs);
-  const deleteJobFromStore = useAppStore((state) => state.deleteJob);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { 
+    jobs, 
+    isLoading: isLoadingJobs, 
+    error: jobsError, 
+    fetchJobs, 
+    deleteJob 
+  } = useAppStore(state => ({
+    jobs: state.getAllJobsFromCache(), // Use cache getter for display
+    isLoading: state.isLoading,
+    error: state.error,
+    fetchJobs: state.fetchJobs,
+    deleteJob: state.deleteJob,
+  }));
+  
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const { toast } = useToast();
 
-
   useEffect(() => {
-    setIsLoading(true);
-    try {
-      const allJobs = getAllJobsFromStore();
-      setJobs(allJobs);
-    } catch (e) {
-      console.error("Error fetching jobs from store:", e);
-    }
-    setIsLoading(false);
-  }, [getAllJobsFromStore, deleteJobFromStore]); // Re-fetch jobs if deleteJobFromStore changes, ensuring UI updates
+    fetchJobs();
+  }, [fetchJobs]);
 
   const openDeleteDialog = (job: Job) => {
     setJobToDelete(job);
     setIsDeleteDialogOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (jobToDelete) {
-      deleteJobFromStore(jobToDelete.id);
+      await deleteJob(jobToDelete.id);
+      // Zustand store should update the jobs list automatically after deleteJob resolves
+      // and fetchJobs is called or local cache is updated by deleteJob.
+      // Forcing a re-fetch here, or relying on deleteJob to update the cache is an option.
+      // The current store implementation optimistically removes, so UI should update.
       toast({
         title: "Job Deleted",
         description: `The job "${jobToDelete.title}" has been successfully deleted.`,
       });
-      // Re-fetch jobs to update the list after deletion
-      const updatedJobs = getAllJobsFromStore();
-      setJobs(updatedJobs);
       setIsDeleteDialogOpen(false);
       setJobToDelete(null);
     }
   };
-
-  if (isLoading) {
+  
+  if (isLoadingJobs && jobs.length === 0) { // Show loader only on initial load
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <LoadingSpinner size={48} />
       </div>
+    );
+  }
+
+  if (jobsError) {
+    return (
+      <ClientOnly>
+        <div className="flex flex-col justify-center items-center min-h-[calc(100vh-200px)] text-center p-4">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Error Loading Jobs</h1>
+          <p className="text-muted-foreground mb-4">{jobsError}</p>
+          <Button onClick={fetchJobs}>Try Again</Button>
+        </div>
+      </ClientOnly>
     );
   }
 
@@ -84,7 +100,7 @@ export default function HomePage() {
           </Button>
         </div>
 
-        {jobs.length === 0 ? (
+        {jobs.length === 0 && !isLoadingJobs ? (
           <Card className="text-center py-12">
             <CardHeader>
               <FileText className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
@@ -124,7 +140,7 @@ export default function HomePage() {
                 <CardFooter className="flex justify-between items-center">
                   <div className="text-sm font-medium flex items-center">
                       <Users className="mr-2 h-4 w-4 text-muted-foreground" />
-                      {job.applicants.length} Applicant{job.applicants.length === 1 ? '' : 's'}
+                      {job.applicants?.length || 0} Applicant{job.applicants?.length === 1 ? '' : 's'}
                     </div>
                   <div className="flex items-center gap-2">
                     <Button asChild variant="outline" size="sm">
@@ -135,6 +151,7 @@ export default function HomePage() {
                       size="icon"
                       onClick={() => openDeleteDialog(job)}
                       title="Delete job"
+                      disabled={isLoadingJobs}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -154,12 +171,12 @@ export default function HomePage() {
               <AlertDialogDescription>
                 This action cannot be undone. This will permanently delete the job
                 "<strong className="font-semibold">{jobToDelete.title}</strong>"
-                and all of its associated data.
+                and all of its associated data from Firestore.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setJobToDelete(null); }}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleConfirmDelete}>
+              <AlertDialogAction onClick={handleConfirmDelete} disabled={isLoadingJobs}>
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>
