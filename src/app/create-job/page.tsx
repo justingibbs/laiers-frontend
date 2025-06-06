@@ -34,7 +34,7 @@ export default function CreateJobPage() {
   const [generatedListing, setGeneratedListing] = useState<string | null>(null);
   const [surveyData, setSurveyData] = useState<CreateSkillsSurveyOutput | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [_jobTitle, setJobTitle] = useState<string>(""); // Renamed to avoid conflict with form
+  const [_jobTitle, setJobTitle] = useState<string>(""); 
   const [shareableSurveyLink, setShareableSurveyLink] = useState<string>("");
 
   const router = useRouter();
@@ -42,6 +42,7 @@ export default function CreateJobPage() {
   const createJobInStore = useAppStore((state) => state.createJob);
   const updateJobInStore = useAppStore((state) => state.updateJob);
   const storeIsLoading = useAppStore((state) => state.isLoading);
+  const storeError = useAppStore((state) => state.error);
 
   const form = useForm<JobDescriptionFormData>({
     resolver: zodResolver(jobDescriptionSchema),
@@ -71,7 +72,6 @@ export default function CreateJobPage() {
         title: data.jobTitle,
         descriptionInput: data.jobDescription,
         generatedListingText: result.jobListing,
-        // survey and applicants will be handled later or initialized in Firestore service
       };
       const newJobId = await createJobInStore(newJobData);
 
@@ -79,41 +79,64 @@ export default function CreateJobPage() {
         setCurrentJobId(newJobId);
         toast({ title: "Success", description: "Job listing generated and saved!" });
       } else {
-        throw new Error("Failed to save job listing.");
+        // Error should have been set in the store
+        const currentStoreError = useAppStore.getState().error;
+        toast({ 
+          variant: "destructive", 
+          title: "Error Saving Job", 
+          description: currentStoreError || "Failed to save job listing. No ID was returned." 
+        });
       }
     } catch (error) {
       console.error("Error generating or saving job listing:", error);
-      toast({ variant: "destructive", title: "Error", description: (error as Error).message || "Failed to generate job listing." });
+      toast({ 
+        variant: "destructive", 
+        title: "Operation Failed", 
+        description: (error as Error).message || "An unexpected error occurred." 
+      });
     }
     setIsLoadingListing(false);
   };
 
   const handleCreateSurvey = async () => {
-    if (!generatedListing || !currentJobId) return;
+    if (!generatedListing || !currentJobId) {
+      toast({variant: "destructive", title: "Missing Data", description: "Cannot create survey without a generated listing and job ID."});
+      return;
+    }
     setIsLoadingSurvey(true);
     try {
       const result = await createSkillsSurvey({ jobListing: generatedListing });
       setSurveyData(result);
       await updateJobInStore(currentJobId, { survey: result });
       toast({ title: "Success", description: "Skills survey created and saved!" });
-    } catch (error)
-    {
+    } catch (error) {
       console.error("Error creating skills survey:", error);
-      toast({ variant: "destructive", title: "Error", description: (error as Error).message || "Failed to create skills survey." });
+      toast({ 
+        variant: "destructive", 
+        title: "Survey Creation Failed", 
+        description: (error as Error).message || "Failed to create skills survey." 
+      });
     }
     setIsLoadingSurvey(false);
   };
 
   const handleFinalize = () => {
-    if (!currentJobId) return;
+    if (!currentJobId) {
+        toast({variant: "destructive", title: "Error", description: "No job ID available to finalize."});
+        return;
+    };
     router.push(`/job/${currentJobId}/applicants`);
   };
   
   const copyToClipboard = (text: string) => {
-    if (!text || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    if (!text || typeof navigator === 'undefined' || !navigator.clipboard) {
+        toast({variant: "destructive", title: "Error", description: "Clipboard not available."});
+        return;
+    }
     navigator.clipboard.writeText(text).then(() => {
       toast({ title: "Copied!", description: "Link copied to clipboard." });
     }).catch(err => {
+      console.error("Failed to copy to clipboard:", err);
       toast({ variant: "destructive", title: "Error", description: "Failed to copy link." });
     });
   };
@@ -243,3 +266,4 @@ export default function CreateJobPage() {
     </ClientOnly>
   );
 }
+

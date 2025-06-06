@@ -34,7 +34,6 @@ interface AppState {
   addApplicant: (jobId: string, applicantData: Omit<Applicant, 'id' | 'submittedAt'>) => Promise<string | undefined>;
   updateApplicant: (jobId: string, applicantId: string, updates: Partial<Omit<Applicant, 'id' | 'jobId' | 'submittedAt'>>) => Promise<void>;
   
-  // For UI consistency, we can still have these getters that operate on the local cache
   getJobFromCache: (jobId: string) => Job | undefined;
   getApplicantFromCache: (jobId: string, applicantId: string) => Applicant | undefined;
   getAllJobsFromCache: () => Job[];
@@ -52,8 +51,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       const jobs = await getJobDocs();
       set({ jobs, isLoading: false });
     } catch (error) {
-      console.error("Error fetching jobs from Firestore:", error);
-      set({ error: (error as Error).message || 'Failed to fetch jobs', isLoading: false });
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || 'Failed to fetch jobs';
+      console.error("Error fetching jobs from Firestore:", errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
     }
   },
 
@@ -62,7 +62,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const job = await getJobDocFromFirestore(jobId);
       set({ currentJob: job || null, isLoading: false });
-      // Also update the jobs array if the job is fetched individually and not in the list or outdated
       if (job) {
         const existingJobs = get().jobs;
         const jobIndex = existingJobs.findIndex(j => j.id === jobId);
@@ -76,8 +75,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return job;
     } catch (error) {
-      console.error(`Error fetching job ${jobId} from Firestore:`, error);
-      set({ error: (error as Error).message || `Failed to fetch job ${jobId}`, isLoading: false });
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || `Failed to fetch job ${jobId}`;
+      console.error(`Error fetching job ${jobId} from Firestore:`, errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
       return undefined;
     }
   },
@@ -85,15 +85,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   createJob: async (jobData) => {
     set({ isLoading: true, error: null });
     try {
-      // createdAt will be set by Firestore, applicants initialized as empty by addJobDoc
       const newJobId = await addJobDoc(jobData);
-      await get().fetchJobs(); // Refresh the list
+      if (!newJobId) {
+        throw new Error("Failed to create job in Firestore, addJobDoc returned no ID.");
+      }
+      await get().fetchJobs(); 
       set({ isLoading: false });
       return newJobId;
     } catch (error) {
-      console.error("Error creating job in Firestore:", error);
-      set({ error: (error as Error).message || 'Failed to create job', isLoading: false });
-      return undefined;
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || 'Failed to create job';
+      console.error("Error creating job in Firestore (store):", errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
+      return undefined; 
     }
   },
 
@@ -101,28 +104,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       await updateJobDoc(jobId, updates);
-      // Optimistically update local cache or re-fetch
       const currentJobs = get().jobs;
       const jobIndex = currentJobs.findIndex(j => j.id === jobId);
       if (jobIndex > -1) {
         const updatedJobs = [...currentJobs];
-        updatedJobs[jobIndex] = { ...updatedJobs[jobIndex], ...updates, applicants: updatedJobs[jobIndex].applicants }; // preserve applicants
-         // If survey is part of updates, ensure it's correctly merged
+        const currentApplicants = updatedJobs[jobIndex].applicants;
+        updatedJobs[jobIndex] = { ...updatedJobs[jobIndex], ...updates, applicants: currentApplicants };
         if (updates.survey) {
           updatedJobs[jobIndex].survey = { ...updatedJobs[jobIndex].survey, ...updates.survey } as Survey;
         }
         set({ jobs: updatedJobs });
       }
       if (get().currentJob?.id === jobId) {
-        set({ currentJob: { ...get().currentJob!, ...updates, applicants: get().currentJob!.applicants } as Job });
-         if (updates.survey && get().currentJob) {
-            set(state => ({ currentJob: { ...state.currentJob!, survey: { ...state.currentJob!.survey, ...updates.survey } as Survey }}));
-        }
+        const currentJobApplicants = get().currentJob!.applicants;
+        set(state => ({ 
+          currentJob: { 
+            ...state.currentJob!, 
+            ...updates, 
+            applicants: currentJobApplicants,
+            survey: updates.survey ? { ...state.currentJob!.survey, ...updates.survey } as Survey : state.currentJob!.survey 
+          } 
+        }));
       }
       set({ isLoading: false });
     } catch (error) {
-      console.error(`Error updating job ${jobId} in Firestore:`, error);
-      set({ error: (error as Error).message || `Failed to update job ${jobId}`, isLoading: false });
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || `Failed to update job ${jobId}`;
+      console.error(`Error updating job ${jobId} in Firestore:`, errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
     }
   },
 
@@ -135,8 +143,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         isLoading: false,
       }));
     } catch (error) {
-      console.error(`Error deleting job ${jobId} from Firestore:`, error);
-      set({ error: (error as Error).message || `Failed to delete job ${jobId}`, isLoading: false });
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || `Failed to delete job ${jobId}`;
+      console.error(`Error deleting job ${jobId} from Firestore:`, errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
     }
   },
   
@@ -144,12 +153,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const newApplicantId = await addApplicantToJobDoc(jobId, applicantData);
-      await get().fetchJobById(jobId); // Refresh the specific job to get the new applicant
+      if (!newApplicantId) {
+        throw new Error("Failed to add applicant, addApplicantToJobDoc returned no ID.");
+      }
+      await get().fetchJobById(jobId); 
       set({ isLoading: false });
       return newApplicantId;
     } catch (error) {
-      console.error(`Error adding applicant to job ${jobId}:`, error);
-      set({ error: (error as Error).message || 'Failed to add applicant', isLoading: false });
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || 'Failed to add applicant';
+      console.error(`Error adding applicant to job ${jobId}:`, errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
       return undefined;
     }
   },
@@ -158,15 +171,15 @@ export const useAppStore = create<AppState>((set, get) => ({
      set({ isLoading: true, error: null });
     try {
       await updateApplicantInJobDoc(jobId, applicantId, updates);
-      await get().fetchJobById(jobId); // Refresh the specific job
+      await get().fetchJobById(jobId); 
       set({ isLoading: false });
     } catch (error) {
-      console.error(`Error updating applicant ${applicantId} in job ${jobId}:`, error);
-      set({ error: (error as Error).message || 'Failed to update applicant', isLoading: false });
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || 'Failed to update applicant';
+      console.error(`Error updating applicant ${applicantId} in job ${jobId}:`, errorMessage, error);
+      set({ error: errorMessage, isLoading: false });
     }
   },
 
-  // Getters for local cache
   getJobFromCache: (jobId) => get().jobs.find(j => j.id === jobId) || (get().currentJob?.id === jobId ? get().currentJob : undefined),
   getApplicantFromCache: (jobId, applicantId) => {
     const job = get().getJobFromCache(jobId);
@@ -175,3 +188,4 @@ export const useAppStore = create<AppState>((set, get) => ({
   getAllJobsFromCache: () => get().jobs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
 
 }));
+

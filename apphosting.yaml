@@ -1,7 +1,50 @@
-# Settings to manage and configure a Firebase App Hosting backend.
-# https://firebase.google.com/docs/app-hosting/configure
-
+# Settings for Backend (on Cloud Run).
+# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
 runConfig:
-  # Increase this value if you'd like to automatically spin up
-  # more instances in response to increased traffic.
-  maxInstances: 1
+  minInstances: 0
+  # maxInstances: 100 # Default is 100
+  # concurrency: 80   # Default based on CPU
+  # cpu: 1            # Default is 1
+  # memoryMiB: 512    # Default is 512
+
+# Environment variables and secrets.
+# See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
+# And https://firebase.google.com/docs/app-hosting/configure#secret-parameters
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    # Replace value with your actual key or set it in Firebase Console
+    value: "YOUR_FIREBASE_API_KEY_HERE" 
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "YOUR_FIREBASE_AUTH_DOMAIN_HERE"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "YOUR_FIREBASE_PROJECT_ID_HERE"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "YOUR_FIREBASE_STORAGE_BUCKET_HERE"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "YOUR_FIREBASE_MESSAGING_SENDER_ID_HERE"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "YOUR_FIREBASE_APP_ID_HERE"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: GOOGLE_API_KEY # For Genkit / Google AI
+    # You must create a secret named GOOGLE_API_KEY_SECRET in Google Cloud Secret Manager
+    # and grant your App Hosting service account permission to access it.
+    secret: GOOGLE_API_KEY_SECRET 
+    availability:
+      - RUNTIME # Genkit flows run server-side at runtime
