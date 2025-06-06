@@ -45,11 +45,11 @@ export default function TakeSurveyPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submissionSummary, setSubmissionSummary] = useState<string | null>(null);
-  const [isLoadingJob, setIsLoadingJob] = useState(true); // For job data fetching specifically
+  const [isLoadingJob, setIsLoadingJob] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [surveyQuestions, setSurveyQuestions] = useState<string[]>([]);
-  const [isStoreHydrated, setIsStoreHydrated] = useState(useAppStore.persist.hasHydrated());
+  const [isStoreHydrated, setIsStoreHydrated] = useState(false);
 
   const form = useForm<SurveyFormData>({
     resolver: zodResolver(createSurveySchema(surveyQuestions)),
@@ -58,24 +58,29 @@ export default function TakeSurveyPage() {
 
   useEffect(() => {
     // Handle Zustand store hydration
-    if (!isStoreHydrated) {
-      const unsub = useAppStore.persist.onFinishHydration(() => {
+    // Initialize with current status, then set up listener
+    setIsStoreHydrated(useAppStore.persist.hasHydrated());
+
+    const unsub = useAppStore.persist.onFinishHydration(() => {
+      setIsStoreHydrated(true);
+    });
+
+    // Fallback if onFinishHydration was missed (e.g. store already hydrated before listener attached)
+    // This ensures we capture the state even if the event fired before this effect ran.
+    if (useAppStore.persist.hasHydrated() && !isStoreHydrated) {
         setIsStoreHydrated(true);
-        unsub(); // Unsubscribe once hydrated
-      });
-      // Fallback if onFinishHydration was missed (e.g. store already hydrated)
-      if (useAppStore.persist.hasHydrated()) {
-        setIsStoreHydrated(true);
-        unsub();
-      }
-      return unsub; // Cleanup subscription
     }
-  }, [isStoreHydrated]);
+    
+    return () => {
+      unsub(); // Cleanup subscription
+    };
+  }, []); // Runs once on mount
+
 
   useEffect(() => {
     // Fetch job data only after store is hydrated
     if (!isStoreHydrated) {
-      setIsLoadingJob(true); // Keep loading indicator active
+      setIsLoadingJob(true); 
       return;
     }
 
@@ -85,6 +90,9 @@ export default function TakeSurveyPage() {
       setJob(jobData);
       const questions = jobData.survey?.questions || [];
       setSurveyQuestions(questions);
+      form.reset(
+        questions.reduce((acc, _, index) => ({ ...acc, [`answer${index}`]: "" }), { applicantName: form.getValues("applicantName") || "" })
+      );
       setErrorMessage(null);
     } else {
       setJob(null);
@@ -92,27 +100,11 @@ export default function TakeSurveyPage() {
       setErrorMessage("Job not found or survey is not available for this job.");
     }
     setIsLoadingJob(false);
-  }, [jobId, getJobFromStore, isStoreHydrated]);
-
-  useEffect(() => {
-    // Reset form when job data (and thus survey questions) changes
-    if (!isStoreHydrated) return; // Wait for hydration
-
-    if (job && job.survey?.questions) {
-      const defaultFormValues: SurveyFormData = { applicantName: "" };
-      job.survey.questions.forEach((_, index) => {
-        defaultFormValues[`answer${index}`] = "";
-      });
-      form.reset(defaultFormValues);
-    } else {
-      form.reset({ applicantName: "" }); // Basic reset if no questions
-    }
-  }, [job, form.reset, isStoreHydrated]);
-
+  }, [jobId, getJobFromStore, isStoreHydrated, form]); // Added form to dependencies for reset
 
   useEffect(() => {
     // Handle error messages and redirection
-    if (!isStoreHydrated) return; // Wait for hydration
+    if (!isStoreHydrated) return; 
 
     if (errorMessage && !isLoadingJob && !job) {
       toast({ variant: "destructive", title: "Error", description: errorMessage });
@@ -170,15 +162,13 @@ export default function TakeSurveyPage() {
     } catch (error) {
       console.error("Error processing survey:", error);
       toast({ variant: "destructive", title: "Error", description: "Failed to process survey responses." });
-      // Optionally revert applicant addition or mark as errored
     }
     setIsSubmitting(false);
   };
 
-  // Combined loading state: wait for store hydration AND job data loading
   if (!isStoreHydrated || isLoadingJob) {
     return (
-      <ClientOnly> {/* ClientOnly still useful for general mounting guard */}
+      <ClientOnly> 
         <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
           <LoadingSpinner size={48} />
         </div>
@@ -305,4 +295,3 @@ export default function TakeSurveyPage() {
     </ClientOnly>
   );
 }
-
