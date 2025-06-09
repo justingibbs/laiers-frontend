@@ -13,32 +13,32 @@ runConfig:
 env:
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     # Replace value with your actual key or set it in Firebase Console
-    value: "YOUR_FIREBASE_API_KEY_HERE" 
+    value: "AIzaSyCc4n-xMKgLp4BOYlLwo-J7nndJHrNk8u8" 
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-    value: "YOUR_FIREBASE_AUTH_DOMAIN_HERE"
+    value: "laiers-73634.firebaseapp.com"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-    value: "YOUR_FIREBASE_PROJECT_ID_HERE"
+    value: "laiers-73634"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-    value: "YOUR_FIREBASE_STORAGE_BUCKET_HERE"
+    value: "laiers-73634.firebasestorage.app"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-    value: "YOUR_FIREBASE_MESSAGING_SENDER_ID_HERE"
+    value: "597512492863"
     availability:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-    value: "YOUR_FIREBASE_APP_ID_HERE"
+    value: "1:597512492863:web:10968737698ad7bdfae58a"
     availability:
       - BUILD
       - RUNTIME
