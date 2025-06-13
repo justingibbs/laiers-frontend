@@ -1,0 +1,155 @@
+# Job Matching App - Cursor AI Rules
+
+## Project Context
+Building a job matching MVP where Job Seekers and Recruiters chat with AI agents. Single-file FastAPI prototype with FastHTML frontend.
+
+## Required Tech Stack (DO NOT SUGGEST ALTERNATIVES)
+- Python with UV dependency management
+- FastAPI backend with FastHTML frontend
+- Google ADK for agent orchestration
+- Vertex AI (Gemini) for LLM backend
+- Firebase Authentication
+- Firestore for all data storage
+- Cloud Run for deployment
+- Google Cloud Storage via ADK Artifacts for files
+
+## Architecture Constraints
+- Single FastAPI service in main.py
+- No microservices, no complex session management
+- Use Firestore for everything (no SQLite, no other databases)
+- ADK Artifacts for file handling (no custom upload logic)
+- Environment-based configuration only
+
+## Code Patterns to Follow
+
+### FastAPI Structure
+```python
+from fastapi import FastAPI, Depends
+from google_adk import get_fast_api_app
+
+app = get_fast_api_app()
+
+# Required routes only:
+@app.get("/")                    # Landing page
+@app.get("/login")               # Auth page  
+@app.get("/dashboard")           # Chat interface (auth required)
+@app.post("/api/chat")           # Agent communication (auth required)
+@app.get("/health")              # Health check
+```
+
+### User Data Models (Always Pydantic)
+```python
+from pydantic import BaseModel
+from typing import Literal
+
+class User(BaseModel):
+    uid: str
+    email: str
+    user_type: Literal["job_seeker", "recruiter"]
+    created_at: datetime
+    profile: UserProfile
+```
+
+### Firebase Auth Pattern
+```python
+from fastapi import Depends, HTTPException
+from firebase_admin import auth
+
+async def get_current_user(token: str = Depends(get_token)):
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+```
+
+### ADK Agent Configuration
+```python
+from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.artifacts import GcsArtifactService
+
+agent = Agent(
+    name="job_matching_agent",
+    model="gemini-2.0-flash",
+    instruction="Job matching assistant that adapts to user type"
+)
+
+artifact_service = GcsArtifactService(bucket_name="job-files")
+runner = Runner(agent=agent, artifact_service=artifact_service)
+```
+
+### File Handling (Always ADK Artifacts)
+```python
+from google.adk.tools.tool_context import ToolContext
+
+def handle_resume(tool_context: ToolContext, filename: str):
+    # User-scoped artifacts persist across sessions
+    artifact = tool_context.load_artifact(f"user:{filename}")
+    if artifact and artifact.inline_data:
+        return process_file(artifact.inline_data.data)
+```
+
+## Coding Rules
+
+### What to ALWAYS do:
+- Use Pydantic models for all data structures
+- Implement proper Firebase auth on protected routes
+- Use ADK Artifacts for any file operations
+- Handle errors with try/except blocks
+- Use environment variables for configuration
+- Follow the single-file prototype structure
+
+### What to NEVER suggest:
+- Alternative frameworks (no Django, Flask, etc.)
+- Different databases (no PostgreSQL, MongoDB, etc.) 
+- Custom file upload implementations
+- Complex microservice architectures
+- SQLite for any environment
+- Alternative authentication systems
+- Different cloud providers
+
+### Error Handling Pattern:
+```python
+try:
+    result = context.save_artifact(filename, artifact)
+except ValueError:
+    return "Service not configured"
+except Exception as e:
+    return f"Operation failed: {str(e)}"
+```
+
+### Environment Configuration:
+```python
+import os
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+```
+
+## Development Focus
+- Keep it simple - this is an MVP prototype
+- Prioritize working end-to-end functionality over complex features
+- User types: "job_seeker" and "recruiter" only
+- Single agent handles both user types with context awareness
+- File uploads through chat interface using ADK
+
+## Common Mistakes to Avoid
+- Don't create separate services for different user types
+- Don't implement custom session management
+- Don't use localStorage in FastHTML (use server-side state)
+- Don't create complex database schemas
+- Don't suggest non-Google cloud services
+
+## File Structure
+```
+/
+├── main.py              # Single FastAPI app file
+├── .env                 # Environment variables
+├── pyproject.toml       # UV dependencies
+├── claude.md            # Full technical documentation
+└── .cursorrules         # This file
+```
+
+When writing code, always reference these patterns and constraints. Focus on MVP functionality that validates the core user flow: signup → dashboard → chat with agents.
