@@ -36,3 +36,9 @@ uv run -- uvicorn main:app --reload --port 8000
     ```bash
     uv run python main.py
     ```
+
+## Setup
+
+1. Download your Firebase service account key from the Firebase Console
+2. Save it as `firebase-credentials.json` in the project root
+3. Copy `.env.example` to `.env` and fill in your values

@@ -1,8 +1,18 @@
 # /Users/justingibbs/Projects/laiers/main.py
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+import os
+from dotenv import load_dotenv
+from firebase_admin import credentials, initialize_app
 
 app = FastAPI()
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Firebase using the JSON file
+cred = credentials.Certificate(os.getenv("FIREBASE_CREDENTIALS_PATH"))
+initialize_app(cred)
 
 # Define the landing page route
 @app.get("/", response_class=HTMLResponse)
