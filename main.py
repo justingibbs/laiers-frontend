@@ -1,30 +1,39 @@
 # /Users/justingibbs/Projects/laiers/main.py
 from fastapi import FastAPI
-from nicegui import ui
-# import sys # No longer needed for arg parsing here
+from fastapi.responses import HTMLResponse
 
-print("DEBUG: main.py script started.")
-
-# Create a FastAPI instance
 app = FastAPI()
-print("DEBUG: FastAPI app instance created.")
 
-# Define a simple NiceGUI page
-@ui.page('/')
-def home_page():
-    print("DEBUG: home_page route accessed/defined.")
-    ui.label('Hello, FastAPI and NiceGUI!').classes('text-2xl')
-    ui.button('Click me!', on_click=lambda: ui.notify('Button clicked!'))
+# Define the landing page route
+@app.get("/", response_class=HTMLResponse)
+async def landing_page():
+    # Simple HTML content for the landing page
+    # This aligns with the goal of testing a simple page load.
+    # FastHTML components would be integrated here later.
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Matching App - Landing</title>
+</head>
+<body>
+    <h1>Welcome to the Job Matching App!</h1>
+    <p>This is the MVP landing page.</p>
+    <p>Please <a href="/login">Login</a> or Sign Up.</p>
+    <p><em>(Backend: FastAPI, Frontend to be: FastHTML, Agent: Google ADK)</em></p>
+</body>
+</html>"""
 
-# Integrate NiceGUI with the FastAPI app instance.
-# This call modifies the `app` by adding NiceGUI's routes and middleware.
-# It does NOT start the server itself when a FastAPI `app` is provided.
-# The server (Uvicorn) will be started by `uv run`, which should pick up the `app` instance.
-ui.run_with(app, title="Laiers App") # Removed host and port arguments
-print("DEBUG: ui.run_with(app, title=...) called to integrate NiceGUI.")
-print("DEBUG: FastAPI 'app' object is now configured. Uvicorn (via 'uv run') should serve it.")
+# Define the health check route as specified in gemini.md
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "Healthy"}
 
-# The `if __name__ == "__main__":` block for argument parsing and explicit server start
-# has been removed. `uv run python main.py --host <host> --port <port>` will execute
-# this script (thus configuring `app` with NiceGUI), and then `uv run` will find
-# the `app` object and serve it using Uvicorn with the provided host and port.
+# Placeholder comments for other routes as per gemini.md, to be implemented later:
+# @app.get("/login")               # Auth page
+# @app.get("/dashboard")           # Main chat interface (auth required)
+# @app.post("/api/chat")           # Agent communication (auth required)
+
+# To run this application (as per gemini.md):
+# uvicorn main:app --reload --port 8000
