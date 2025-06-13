@@ -1,391 +1,294 @@
-# Gemini AI Assistant Guide
+# Job Matching App - Development Context
 
 ## Project Overview
 
-### Project Purpose/Goal
-An agent-powered job matching platform that revolutionizes hiring by identifying candidates with the essential soft skills needed to excel in GenAI-transformed workplaces. Rather than focusing on traditional hard skills that AI increasingly automates, the platform evaluates and matches based on uniquely human capabilities—creative problem-solving, emotional intelligence, adaptability, critical thinking, and collaborative leadership—that become more valuable as AI handles routine tasks.
+You are helping build a job matching prototype where Job Seekers and Recruiters interact with AI agents through a chat interface. This is a minimum viable product (MVP) focused on validating core user interactions before adding complexity.
 
-### Target Users
-Initially focused on technology professionals, with planned expansion to serve all industries and career levels. The platform addresses the universal need for soft-skill assessment across any role where human-AI collaboration is becoming essential.
+### Core User Flow
+1. Users create an account as either "Job Seeker" or "Recruiter"
+2. After login, users land on a dashboard with a chat interface
+3. Users interact with AI agents through natural language conversation
+4. All app functionality is accessed through agent conversations (job search, posting, matching, etc.)
 
-### Key Features
-- **Intelligent Survey Generation**: AI agents analyze job posting text to automatically create customized assessments that evaluate soft skills most relevant to each specific role
-- **Dynamic Candidate Assessment**: Job seekers complete personalized surveys designed to reveal their adaptability, problem-solving approach, and AI-collaboration readiness for the target position
-- **Smart Ranking & Analysis**: Advanced algorithms analyze responses to rank candidates based on soft-skill alignment with role requirements, providing recruiters with insights beyond traditional qualifications
+## Technical Architecture
 
-### Architecture Overview
-The platform operates through three specialized AI agents working in concert:
+### Tech Stack (DO NOT MODIFY - These are fixed requirements)
+- **UV** - Python dependency management
+- **FastAPI** - Backend API framework  
+- **FastHTML** - Python-based frontend for chat interface
+- **Google ADK** - Agent orchestration and LLM integration
+- **Vertex AI** - LLM backend (Gemini models)
+- **Firebase Authentication** - User authentication
+- **Firestore** - User data and chat history storage
+- **Cloud Run** - Serverless container deployment
+- **Google Cloud Storage** - File storage via ADK Artifacts
 
-- **Recruiter Agent**: Collaborates with hiring managers via LLM chat interface to analyze job postings and generate tailored soft-skill assessments
-- **Candidate Agent**: Guides job seekers through personalized survey experiences, ensuring comprehensive evaluation of relevant capabilities
-- **Analytics Agent**: Processes assessment results to deliver ranked candidate recommendations with detailed soft-skill insights
+### Application Structure
 
-Users authenticate as either recruiters or job seekers. Recruiters submit job descriptions to generate custom surveys, while candidates complete targeted assessments. The primary interaction model is conversational AI, making the process intuitive and adaptive.
+#### Single FastAPI Service
+```python
+# main.py - single file for prototype
+from fastapi import FastAPI
+from google_adk import get_fast_api_app
 
-### Current Status
-- **Phase 1 (In Progress)**: Core infrastructure development including user authentication, basic page structure, and local environment setup
-- **Phase 2 (Next)**: Survey generation engine and candidate assessment interface development
-- **Phase 3 (Planned)**: Cloud deployment and production optimization
+app = get_fast_api_app()
+
+@app.get("/")                    # Landing page
+@app.get("/login")               # Auth page  
+@app.get("/dashboard")           # Main chat interface (auth required)
+@app.post("/api/chat")           # Agent communication (auth required)
+@app.get("/health")              # Health check for Cloud Run
+```
+
+#### Route Structure
+- `/` - Landing page with signup/login options
+- `/login` - Firebase Authentication with user type selection
+- `/dashboard` - Main chat interface (requires authentication)
+- `/api/chat` - Backend endpoint for agent communication (requires authentication)
+- `/health` - Cloud Run health check
+
+### Data Models
+
+#### User Data Structure (Python/Pydantic)
+```python
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Literal
+
+class UserProfile(BaseModel):
+    name: str
+    # Additional profile fields as needed
+
+class User(BaseModel):
+    uid: str  # Firebase user ID
+    email: str
+    user_type: Literal["job_seeker", "recruiter"]
+    created_at: datetime
+    profile: UserProfile
+
+# Firestore collections:
+# - users: User profiles and type information
+# - conversations: Chat history between users and agents  
+# - sessions: Simple session management for ongoing chats
+```
+
+### Authentication & Authorization
+
+#### Firebase Authentication
+- **Providers**: Google OAuth and email/password
+- **User Types**: Stored in Firestore after signup with custom claims
+- **Protected Routes**: `/dashboard` and `/api/*` require valid Firebase ID token
+- **Implementation**: FastAPI dependency injection for token verification
+
+```python
+# Example auth dependency
+from fastapi import Depends, HTTPException
+from firebase_admin import auth
+
+async def get_current_user(token: str = Depends(get_token)):
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+```
+
+### Agent Configuration
+
+#### Google ADK Setup
+```python
+from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.artifacts import GcsArtifactService
+from google.adk.sessions import InMemorySessionService
+
+# Single job matching agent that adapts based on user context
+job_matching_agent = Agent(
+    name="job_matching_agent",
+    model="gemini-2.0-flash",
+    instruction="You are a job matching assistant. Help job seekers find opportunities and help recruiters find candidates.",
+    description="Adapts behavior based on user type (job_seeker vs recruiter)"
+)
+
+# Configure with artifact support for file uploads
+artifact_service = GcsArtifactService(bucket_name="job-matching-files")
+session_service = InMemorySessionService()
+
+runner = Runner(
+    agent=job_matching_agent,
+    app_name="job_matching_app", 
+    session_service=session_service,
+    artifact_service=artifact_service
+)
+```
+
+#### Agent Capabilities by User Type
+- **Job Seekers**: Resume analysis, job search guidance, interview prep, skills assessment
+- **Recruiters**: Candidate sourcing advice, job posting optimization, screening assistance
+
+### File Upload Support (ADK Artifacts)
+
+#### Configuration
+```python
+from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
+
+# Development
+artifact_service = InMemoryArtifactService()
+
+# Production  
+artifact_service = GcsArtifactService(bucket_name="your-job-files-bucket")
+```
+
+#### File Handling in Agent Tools
+```python
+from google.adk.tools.tool_context import ToolContext
+import google.genai.types as types
+
+def analyze_uploaded_resume(tool_context: ToolContext, filename: str):
+    """Analyze user's uploaded resume"""
+    # Load user-scoped artifact (persists across sessions)
+    resume_artifact = tool_context.load_artifact(f"user:{filename}")
+    
+    if resume_artifact and resume_artifact.inline_data:
+        resume_bytes = resume_artifact.inline_data.data
+        mime_type = resume_artifact.inline_data.mime_type
+        
+        # Process resume content
+        # Return analysis to agent for conversation
+        return f"Resume analysis for {filename}..."
+    
+    return "Resume not found. Please upload your resume first."
+```
+
+### Storage Strategy
+
+#### All Firestore for Simplicity
+- **User data**: Firestore users collection
+- **Chat history**: Firestore conversations collection  
+- **Session management**: Firestore sessions collection
+- **File storage**: Google Cloud Storage via ADK Artifacts
+- **No SQLite**: Use Firestore for both dev and production to avoid environment differences
+
+### Environment Configuration
+
+```bash
+# Required for all environments
+GOOGLE_CLOUD_PROJECT=your-project-id
+FIREBASE_PROJECT_ID=your-firebase-project  
+VERTEX_AI_LOCATION=us-central1
+
+# Environment-specific
+ENVIRONMENT=development  # or production
+```
+
+### Deployment (Cloud Run)
+
+#### Key Requirements
+- Single service deployment
+- Environment secrets for Firebase service account
+- Automatic scaling with reasonable limits
+- HTTPS enforcement (automatic with Cloud Run)
+
+## Development Guidelines
+
+### FastHTML Frontend Patterns
+- Single page chat interface with real-time updates
+- Mobile-responsive design for both user types
+- Display user context (type, profile) in UI
+- Handle file uploads through chat interface
+
+### Security (Minimal for MVP)
+- Firebase ID token verification on protected routes
+- Basic CORS configuration for browser requests
+- Standard GCP encryption (automatic)
+- Basic Firestore security rules based on user authentication
+
+### Error Handling Patterns
+```python
+# Always check for artifact service configuration
+try:
+    version = context.save_artifact(filename, artifact)
+except ValueError as e:
+    # ArtifactService not configured
+    return "File upload not available"
+except Exception as e:
+    # Handle storage errors
+    return "File upload failed, please try again"
+```
+
+## Development Workflow
+
+### Local Development
+```bash
+# Setup
+uv sync
+export ENVIRONMENT=development
+export GOOGLE_CLOUD_PROJECT=your-dev-project
+
+# Run locally
+uvicorn main:app --reload --port 8000
+```
+
+### Testing Access Points
+- **Chat Interface**: http://localhost:8000/dashboard
+- **API Documentation**: http://localhost:8000/docs
+- **Health Check**: http://localhost:8000/health
+
+## Implementation Priority
+
+### Phase 1: Core MVP
+1. Setup GCP project with Firebase, Firestore, Vertex AI
+2. Create basic FastAPI app with routes
+3. Implement Firebase authentication with user types
+4. Build FastHTML chat interface
+5. Configure ADK agent with basic job matching capabilities
+6. Deploy to Cloud Run
+
+### Phase 2: File Support  
+1. Configure ADK Artifacts with GCS
+2. Add file upload to chat interface
+3. Implement resume/job description processing
+4. Test end-to-end file handling
+
+### Phase 3: Enhancements
+1. Advanced document analysis (skill extraction, matching)
+2. Vector storage for semantic search
+3. Enhanced UI/UX
+4. Performance monitoring
+
+## Key Constraints & Decisions
+
+### What's Intentionally Simple
+- **Single file architecture** (main.py) for prototype
+- **No complex authorization** beyond user type
+- **No advanced monitoring** initially
+- **No microservices** - single FastAPI service
+- **No complex session management** - basic Firestore storage
+
+### What Can Be Enhanced Later
+- Vector storage for intelligent matching
+- Advanced file processing pipelines  
+- Team/company features for recruiters
+- Complex workflow orchestration
+- Performance monitoring and analytics
+
+## Common Pitfalls to Avoid
+
+1. **Don't over-engineer** - stick to the simple architecture for MVP
+2. **Firebase vs Firestore confusion** - use Firebase Auth + Firestore database
+3. **ADK complexity** - start with single agent, add multi-agent later
+4. **File handling** - use ADK Artifacts, not custom upload logic
+5. **Environment differences** - use Firestore everywhere, no SQLite
+
+## Success Metrics for MVP
+
+- Users can register as job seeker or recruiter
+- Chat interface works end-to-end with agent
+- Basic job matching conversations function
+- File upload and processing works
+- Deployment to Cloud Run succeeds
+- Authentication flow is smooth
 
 ---
 
-This document outlines how to effectively work with Google's Gemini AI assistant for this project, including our tech stack, coding standards, and interaction guidelines.
-
-## Tech Stack
-
-This project utilizes the following technologies:
-
-### Backend & Framework
-- **UV**: Dependency management for Python packages
-- **FastAPI**: Modern, fast web framework for building APIs with Python
-- **NiceGUI** ([https://nicegui.io/documentation](https://nicegui.io/documentation)): Python-based frontend framework for creating web interfaces
-
-### Agent Orchestration
-- **Google ADK** ([https://google.github.io/adk-docs/](https://google.github.io/adk-docs/)): Agent Development Kit for orchestrating AI agents and workflows
-
-### Cloud Infrastructure
-- **Google Cloud Platform** - Primary cloud provider
-- **Cloud Run** - Serverless container deployment platform
-- **Firebase Auth**: User authentication and authorization
-- **Firestore**: NoSQL document database for application data
-- **Firebase Storage**: Cloud storage for user uploads and file management
-
-## Architecture Requirements
-
-### Authentication & Authorization
-- **Firebase Auth** - User authentication and identity management
-  - Integration with FastAPI for token verification
-  - Client-side SDK integration with NiceGUI frontend
-  - User management dashboard access
-
-### Data Storage Strategy
-
-#### Primary Database
-- **Firestore** - NoSQL document database for application data
-  - Schemaless document structure
-  - Real-time synchronization capabilities
-  - Integration with Firebase Auth for security rules
-
-#### File Storage
-- **Firebase Storage** - User-generated content and file uploads
-- **Cloud Storage** - Application assets, ML models, and static files
-
-#### Vector Storage (if needed)
-- **Vertex AI Vector Search** - For AI/ML features requiring similarity search
-- Alternative: Evaluate Pinecone or other vector databases based on requirements
-
-## Code Style Guidelines
-
-When contributing code, please adhere to the following style guidelines:
-
-### Core Principles
-- **No Defensive Coding**: Avoid adding overly defensive code. Trust the contracts and inputs.
-- **Simplicity Over Complexity**: Always strive for the simplest solution to a problem, even if it means some repetition.
-- **Leverage Existing Libraries**: Prefer using libraries already present in the project over introducing new ones, where feasible.
-- **Avoid JavaScript**: Minimize or avoid the use of JavaScript unless absolutely necessary and no alternative within the existing stack (e.g., NiceGUI capabilities) exists.
-
-### Python Standards
-```python
-# Simple, direct function implementations
-def calculate_user_score(activities: list[dict]) -> float:
-    total_points = sum(activity['points'] for activity in activities)
-    return total_points / len(activities) if activities else 0.0
-
-# Use type hints consistently
-from typing import Optional
-
-def get_user_data(user_id: str) -> Optional[dict]:
-    # Trust the input, no excessive validation
-    doc = firestore_client.collection('users').document(user_id).get()
-    return doc.to_dict() if doc.exists else None
-```
-
-### FastAPI Patterns
-```python
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-
-app = FastAPI()
-
-class UserCreate(BaseModel):
-    email: str
-    name: str
-
-@app.post("/users/")
-async def create_user(user: UserCreate):
-    # Simple, direct implementation
-    user_data = user.dict()
-    doc_ref = firestore_client.collection('users').add(user_data)
-    return {"user_id": doc_ref[1].id, "message": "User created successfully"}
-
-@app.get("/users/{user_id}")
-async def get_user(user_id: str):
-    user_data = get_user_data(user_id)
-    if not user_data:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user_data
-```
-
-### NiceGUI Interface Patterns
-```python
-from nicegui import ui, app
-
-def create_user_dashboard(user_id: str):
-    user_data = get_user_data(user_id)
-    
-    with ui.card().classes('w-full max-w-md'):
-        ui.label(f"Welcome, {user_data['name']}").classes('text-2xl font-bold')
-        ui.label(f"Email: {user_data['email']}")
-        
-        # Use NiceGUI's built-in capabilities instead of custom JS
-        ui.button('Update Profile', on_click=lambda: update_profile_dialog(user_id))
-
-def update_profile_dialog(user_id: str):
-    with ui.dialog() as dialog, ui.card():
-        ui.label('Update Profile')
-        name_input = ui.input('Name')
-        ui.button('Save', on_click=lambda: save_and_close(user_id, name_input.value, dialog))
-
-def save_and_close(user_id: str, new_name: str, dialog):
-    # Simple update operation
-    firestore_client.collection('users').document(user_id).update({'name': new_name})
-    dialog.close()
-    ui.notify('Profile updated successfully')
-```
-
-### Cloud Run Deployment
-```python
-# Dockerfile example for Cloud Run
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install UV
-RUN pip install uv
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --frozen
-
-# Copy application code
-COPY . .
-
-# Expose port
-EXPOSE 8080
-
-# Run the application
-CMD ["uv", "run", "python", "main.py", "--host", "0.0.0.0", "--port", "8080"]
-```
-
-### Google Cloud Storage Integration
-```python
-from google.cloud import storage
-
-def upload_to_gcs(file_data: bytes, bucket_name: str, blob_name: str) -> str:
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    blob.upload_from_string(file_data)
-    return blob.public_url
-
-def download_from_gcs(bucket_name: str, blob_name: str) -> bytes:
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    return blob.download_as_bytes()
-```
-
-### Vertex AI Vector Search Integration
-```python
-from google.cloud import aiplatform
-
-def create_vector_index(project_id: str, location: str, display_name: str):
-    client = aiplatform.gapic.IndexServiceClient()
-    parent = f"projects/{project_id}/locations/{location}"
-    
-    index = aiplatform.gapic.Index(
-        display_name=display_name,
-        description="Vector search index for similarity matching"
-    )
-    
-    operation = client.create_index(parent=parent, index=index)
-    return operation.result()
-
-def search_vectors(query_vector: list[float], index_name: str) -> list[dict]:
-    # Simple vector similarity search implementation
-    # Integrate with your specific vector search requirements
-    pass
-```
-
-## Working with Gemini
-
-### Effective Prompting Strategies
-1. **Be Specific About Stack**: Always mention you're working with FastAPI + NiceGUI + Firebase
-2. **Request Simple Solutions**: Ask for straightforward implementations without defensive coding
-3. **Specify No JavaScript**: Explicitly request Python-only solutions using NiceGUI capabilities
-4. **Include Context**: Mention Google ADK when working with agent orchestration
-
-### Code Generation Requests
-When asking Gemini to generate code:
-
-```
-Generate a FastAPI endpoint that:
-- Uses simple, direct implementation (no defensive coding)
-- Integrates with Firestore for data persistence
-- Returns clear error messages using HTTPException
-- Follows our existing patterns in the codebase
-```
-
-```
-Create a NiceGUI interface component that:
-- Uses only NiceGUI built-in elements (no custom JavaScript)
-- Implements simple, clean styling with classes
-- Handles user interactions through Python callbacks
-- Integrates with our Firebase backend
-```
-
-```
-Design a Google ADK agent workflow that:
-- Orchestrates multiple AI agents for [specific task]
-- Uses simple configuration patterns
-- Integrates with our FastAPI backend
-- Follows ADK best practices from the documentation
-```
-
-### Code Review Requests
-```
-Review this Python code for:
-- Adherence to our "no defensive coding" principle
-- Simplicity and directness of implementation
-- Proper use of existing libraries (FastAPI, NiceGUI, Firebase)
-- Avoidance of unnecessary JavaScript
-- Type hint usage and clarity
-```
-
-### Debugging Assistance
-```
-I'm encountering [specific error] in [FastAPI/NiceGUI/Firebase/ADK].
-Context: [brief description of functionality]
-Current code: [paste relevant Python code]
-Error message: [paste error]
-Expected behavior: [what should happen]
-Please provide the simplest solution using our existing stack.
-```
-
-## Project-Specific Instructions
-
-### Firebase Integration
-- Use Firebase Admin SDK for server-side operations
-- Implement simple document reads/writes without excessive error handling
-- Trust Firebase's built-in validation and constraints
-- Use subcollections for related data (e.g., user activities, uploads)
-
-### NiceGUI Development
-- Leverage NiceGUI's reactive elements instead of custom JavaScript
-- Use built-in styling classes for consistent appearance
-- Implement user interactions through Python event handlers
-- Utilize NiceGUI's built-in components (cards, dialogs, notifications)
-
-### FastAPI API Design
-- Keep endpoint logic simple and direct
-- Use Pydantic models for request/response validation
-- Implement straightforward error handling with HTTPException
-- Follow RESTful conventions where appropriate
-
-### Google ADK Agent Patterns
-- Configure agents using simple dictionary-based configurations
-- Chain agents using ADK's built-in orchestration patterns
-- Integrate agent outputs directly with FastAPI endpoints
-- Keep agent logic focused and single-purpose
-
-## Common Patterns
-
-### User Authentication Flow
-```python
-from firebase_admin import auth
-
-def verify_user_token(token: str) -> str:
-    # Simple token verification
-    decoded_token = auth.verify_id_token(token)
-    return decoded_token['uid']
-
-@app.get("/protected-endpoint")
-async def protected_route(authorization: str = Header(...)):
-    token = authorization.replace("Bearer ", "")
-    user_id = verify_user_token(token)
-    return {"user_id": user_id, "message": "Access granted"}
-```
-
-### File Upload Pattern
-```python
-from firebase_admin import storage
-
-@app.post("/upload")
-async def upload_file(file: UploadFile, user_id: str):
-    bucket = storage.bucket()
-    blob = bucket.blob(f"uploads/{user_id}/{file.filename}")
-    blob.upload_from_file(file.file)
-    return {"download_url": blob.public_url}
-```
-
-### NiceGUI Page Structure
-```python
-@ui.page('/dashboard')
-def dashboard_page():
-    ui.label('Dashboard').classes('text-3xl font-bold mb-4')
-    
-    with ui.row().classes('w-full gap-4'):
-        create_stats_card()
-        create_activity_card()
-        create_upload_card()
-
-def create_stats_card():
-    with ui.card().classes('flex-1'):
-        ui.label('Statistics').classes('text-xl font-semibold')
-        # Simple data display without complex state management
-        stats = get_user_stats(get_current_user_id())
-        ui.label(f"Total Activities: {stats['total']}")
-```
-
-## Dependency Management with UV
-
-### Adding Dependencies
-```bash
-# Add a new dependency
-uv add fastapi[all]
-uv add nicegui
-uv add firebase-admin
-
-# Add development dependencies
-uv add --dev pytest
-uv add --dev black
-```
-
-### Project Setup
-```bash
-# Initialize new project
-uv init my-project
-cd my-project
-
-# Install dependencies
-uv sync
-
-# Run the application
-uv run python main.py
-```
-
-## Testing Guidelines
-- Write simple, focused tests that verify core functionality
-- Use pytest for testing FastAPI endpoints
-- Test NiceGUI components through their Python interfaces
-- Mock Firebase operations for unit tests
-- Keep test setup minimal and direct
-
-## Documentation Standards
-- Write clear docstrings for complex functions only
-- Document ADK agent configurations and workflows
-- Maintain API endpoint documentation with FastAPI's automatic docs
-- Keep this guide updated as patterns evolve
-
+*This document should be updated as the prototype evolves and new requirements emerge.*
