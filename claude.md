@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-You are helping build a job matching prototype where Job Seekers and Recruiters interact with AI agents through a chat interface. This is a minimum viable product (MVP) focused on validating core user interactions before adding complexity.
+You are helping build a job matching prototype where Companies and Talent interact with AI agents through a chat interface. This is a minimum viable product (MVP) focused on validating core user interactions before adding complexity.
 
 ### Core User Flow
-1. Users create an account as either "Job Seeker" or "Recruiter"
+1. Users create an account as either "Company" or "Talent"
 2. After login, users land on a dashboard with a chat interface
 3. Users interact with AI agents through natural language conversation
 4. All app functionality is accessed through agent conversations (job search, posting, matching, etc.)
@@ -62,7 +62,7 @@ class UserProfile(BaseModel):
 class User(BaseModel):
     uid: str  # Firebase user ID
     email: str
-    user_type: Literal["job_seeker", "recruiter"]
+    user_type: Literal["company", "talent"]
     created_at: datetime
     profile: UserProfile
 
@@ -123,8 +123,8 @@ runner = Runner(
 ```
 
 #### Agent Capabilities by User Type
-- **Job Seekers**: Resume analysis, job search guidance, interview prep, skills assessment
-- **Recruiters**: Candidate sourcing advice, job posting optimization, screening assistance
+- **Talent**: Resume analysis, job search guidance, interview prep, skills assessment
+- **Companies**: Candidate sourcing advice, job posting optimization, screening assistance
 
 ### File Upload Support (ADK Artifacts)
 

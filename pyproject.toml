@@ -5,19 +5,20 @@ description = "Job matching MVP with AI agents"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115.12",
-    "firebase-admin>=6.9.0",
-    "google-adk>=1.2.1",
-    "python-fasthtml>=0.12.19",
-    "uvicorn>=0.27.1",
-    "python-dotenv>=1.0.0",
-    "pydantic>=2.6.1",
-    "google-cloud-storage>=2.14.0",
-    "google-cloud-firestore>=2.14.0",
+    "fastapi",
+    "python-fasthtml",
+    "google-adk",
+    "google-cloud-firestore", 
+    "firebase-admin",
+    "pydantic[email]",
+    "python-dotenv",
+    "uvicorn[standard]",
+    "python-multipart"
 ]
 
 [dependency-groups]
 dev = [
-    "black>=25.1.0",
-    "pytest>=8.4.0",
+    "black",
+    "pytest",
+    "ruff"
 ]

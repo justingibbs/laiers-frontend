@@ -1,7 +1,7 @@
 # Job Matching App - Cursor AI Rules
 
 ## Project Context
-Building a job matching MVP where Job Seekers and Recruiters chat with AI agents. Single-file FastAPI prototype with FastHTML frontend.
+Building a job matching MVP where Talent and Companies chat with AI agents. Single-file FastAPI prototype with FastHTML frontend.
 
 ## Required Tech Stack (DO NOT SUGGEST ALTERNATIVES)
 - Python with UV dependency management
@@ -20,47 +20,213 @@ Building a job matching MVP where Job Seekers and Recruiters chat with AI agents
 - ADK Artifacts for file handling (no custom upload logic)
 - Environment-based configuration only
 
+## Project Structure
+```
+job-matching-app/
+├── main.py                 # Single FastAPI app with FastHTML routes
+├── pyproject.toml         # UV project configuration & dependencies
+├── uv.lock               # UV lockfile (auto-generated)
+├── .env                   # Environment variables (local dev)
+├── .env.example          # Template for environment variables
+├── .gitignore            # Git ignore file
+├── README.md             # Project documentation
+├── claude.md             # Project documentation for Claude Code
+├── static/               # Minimal static assets
+│   ├── css/
+│   │   └── styles.css    # Basic styling (optional)
+│   └── images/           # Static images only
+├── config/
+│   └── firebase_config.json  # Firebase service account key
+├── utils/                # Utility modules (keep minimal)
+│   ├── __init__.py
+│   ├── auth.py           # Firebase auth helpers
+│   ├── firestore.py      # Firestore helpers
+│   └── models.py         # Pydantic models
+└── deployment/
+    ├── Dockerfile        # For Cloud Run (uses UV)
+    └── cloudbuild.yaml   # Cloud Build configuration
+```
+
 ## Code Patterns to Follow
 
-### FastAPI Structure
+### Main Application Structure
 ```python
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
+from fastapi.staticfiles import StaticFiles
+from fasthtml.common import *
 from google_adk import get_fast_api_app
 
+# Initialize FastAPI with ADK
 app = get_fast_api_app()
 
-# Required routes only:
-@app.get("/")                    # Landing page
-@app.get("/login")               # Auth page  
-@app.get("/dashboard")           # Chat interface (auth required)
-@app.post("/api/chat")           # Agent communication (auth required)
-@app.get("/health")              # Health check
+# Mount static files (minimal - just CSS and images)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# FastHTML routes (no templates needed)
+@app.get("/")
+def landing_page():
+    return create_landing_page()
+
+@app.get("/login")
+def login_page():
+    return create_login_page()
+
+@app.get("/dashboard")
+def dashboard_page(user = Depends(require_auth)):
+    return create_dashboard_page(user)
+
+@app.post("/api/chat")
+async def chat_endpoint(request: Request, user = Depends(require_auth)):
+    return await handle_chat_message(request, user)
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+```
+
+### FastHTML + HTMX Component Pattern
+```python
+from fasthtml.common import *
+
+def create_landing_page():
+    return Html(
+        Head(
+            Title("Job Matching App"),
+            Link(rel="stylesheet", href="/static/css/styles.css"),
+            Script(src="https://unpkg.com/htmx.org@1.9.10")
+        ),
+        Body(
+            Header(H1("Find Your Perfect Match")),
+            Main(
+                Div(
+                    H2("Talent & Company Connected"),
+                    A("Get Started", href="/login", cls="btn-primary")
+                )
+            )
+        )
+    )
+
+def create_dashboard_page(user_data: dict):
+    return Html(
+        Head(
+            Title("Chat Dashboard"),
+            Link(rel="stylesheet", href="/static/css/styles.css"),
+            Script(src="https://unpkg.com/htmx.org@1.9.10")
+        ),
+        Body(
+            Header(
+                H1("AI Job Assistant"),
+                P(f"Welcome, {user_data['email']} ({user_data.get('user_type', 'user')})")
+            ),
+            Main(
+                Div(id="chat-messages", cls="chat-container"),
+                Form(
+                    Input(
+                        type="text", 
+                        name="message", 
+                        placeholder="Ask me anything about jobs...",
+                        required=True
+                    ),
+                    Button("Send", type="submit"),
+                    hx_post="/api/chat",
+                    hx_target="#chat-messages",
+                    hx_swap="beforeend",
+                    hx_trigger="submit",
+                    cls="chat-form"
+                )
+            )
+        )
+    )
+
+def create_chat_message(message: str, response: str):
+    return Div(
+        Div(message, cls="user-message"),
+        Div(response, cls="assistant-message"),
+        cls="message-pair"
+    )
 ```
 
 ### User Data Models (Always Pydantic)
 ```python
-from pydantic import BaseModel
-from typing import Literal
+# utils/models.py
+from pydantic import BaseModel, EmailStr
+from typing import Literal, Optional
+from datetime import datetime
+
+class UserProfile(BaseModel):
+    name: Optional[str] = None
+    company: Optional[str] = None
+    skills: list[str] = []
+    experience_level: Optional[str] = None
 
 class User(BaseModel):
     uid: str
-    email: str
-    user_type: Literal["job_seeker", "recruiter"]
+    email: EmailStr
+    user_type: Literal["company", "talent"]
     created_at: datetime
     profile: UserProfile
+    is_active: bool = True
+
+class ChatMessage(BaseModel):
+    user_id: str
+    message: str
+    response: str
+    timestamp: datetime
+    session_id: str
 ```
 
 ### Firebase Auth Pattern
 ```python
-from fastapi import Depends, HTTPException
+# utils/auth.py
+from fastapi import Depends, HTTPException, Cookie
 from firebase_admin import auth
+import os
 
-async def get_current_user(token: str = Depends(get_token)):
+async def get_current_user(session_token: str = Cookie(None)):
+    if not session_token:
+        raise HTTPException(status_code=401, detail="No session token")
+    
     try:
-        decoded_token = auth.verify_id_token(token)
+        decoded_token = auth.verify_session_cookie(session_token)
         return decoded_token
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+async def require_auth(user = Depends(get_current_user)):
+    return user
+```
+
+### Firestore Helper Pattern
+```python
+# utils/firestore.py
+from google.cloud import firestore
+from utils.models import User, ChatMessage
+import os
+
+# Initialize Firestore using GOOGLE_CLOUD_PROJECT
+db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
+
+class FirestoreService:
+    @staticmethod
+    async def create_user(user: User) -> bool:
+        try:
+            doc_ref = db.collection("users").document(user.uid)
+            doc_ref.set(user.model_dump())
+            return True
+        except Exception as e:
+            print(f"Error creating user: {e}")
+            return False
+    
+    @staticmethod
+    async def get_user(uid: str) -> Optional[User]:
+        try:
+            doc = db.collection("users").document(uid).get()
+            if doc.exists:
+                return User(**doc.to_dict())
+            return None
+        except Exception as e:
+            print(f"Error getting user: {e}")
+            return None
 ```
 
 ### ADK Agent Configuration
@@ -69,13 +235,21 @@ from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.artifacts import GcsArtifactService
 
+# Configure agent
 agent = Agent(
     name="job_matching_agent",
-    model="gemini-2.0-flash",
-    instruction="Job matching assistant that adapts to user type"
+    model="gemini-2.0-flash-exp",
+    instruction="""You are a job matching assistant. 
+    - For 'talent' users: Help with resume review, job search, interview prep
+    - For 'company' users: Help with job posting, candidate screening, hiring advice
+    Adapt your responses based on user_type in the context."""
 )
 
-artifact_service = GcsArtifactService(bucket_name="job-files")
+# Configure artifact service for file handling
+artifact_service = GcsArtifactService(
+    bucket_name=os.getenv("ADK_BUCKET_NAME")
+)
+
 runner = Runner(agent=agent, artifact_service=artifact_service)
 ```
 
@@ -83,24 +257,108 @@ runner = Runner(agent=agent, artifact_service=artifact_service)
 ```python
 from google.adk.tools.tool_context import ToolContext
 
-def handle_resume(tool_context: ToolContext, filename: str):
-    # User-scoped artifacts persist across sessions
-    artifact = tool_context.load_artifact(f"user:{filename}")
-    if artifact and artifact.inline_data:
-        return process_file(artifact.inline_data.data)
+async def handle_file_upload(tool_context: ToolContext, user_id: str, filename: str):
+    try:
+        # User-scoped artifacts persist across sessions
+        artifact_key = f"user_{user_id}:{filename}"
+        artifact = tool_context.load_artifact(artifact_key)
+        
+        if artifact and artifact.inline_data:
+            # Process the file content
+            return process_file_content(artifact.inline_data.data)
+        else:
+            return "File not found or empty"
+            
+    except ValueError:
+        return "Artifact service not configured"
+    except Exception as e:
+        return f"File processing failed: {str(e)}"
+```
+
+## Environment Configuration
+```python
+# Configuration in main.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Required environment variables
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+VERTEX_AI_LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-credentials.json")
+ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
+
+# Validation for required variables
+required_vars = {
+    "GOOGLE_CLOUD_PROJECT": GOOGLE_CLOUD_PROJECT,
+    "ADK_BUCKET_NAME": ADK_BUCKET_NAME
+}
+
+for var_name, var_value in required_vars.items():
+    if not var_value:
+        raise ValueError(f"Required environment variable {var_name} is not set")
+```
+
+### .env.example Template
+```bash
+# Environment
+ENVIRONMENT=development
+
+# Google Cloud
+GOOGLE_CLOUD_PROJECT=your-project-id
+VERTEX_AI_LOCATION=us-central1
+
+# Firebase
+FIREBASE_CREDENTIALS_PATH=firebase-credentials.json
+
+# ADK Configuration
+ADK_BUCKET_NAME=your-bucket-name
+```
+
+## Development Dependencies (pyproject.toml)
+```toml
+[project]
+name = "job-matching-app"
+version = "0.1.0"
+dependencies = [
+    "fastapi",
+    "fasthtml",
+    "google-adk",
+    "google-cloud-firestore", 
+    "firebase-admin",
+    "pydantic[email]",
+    "python-dotenv",
+    "uvicorn[standard]",
+    "python-multipart"
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "black", 
+    "ruff"
+]
 ```
 
 ## Coding Rules
 
 ### What to ALWAYS do:
-- Use Pydantic models for all data structures
-- Implement proper Firebase auth on protected routes
+- Keep main.py as the single entry point
+- Use FastHTML components as Python functions returning HTML elements
+- Use HTMX attributes for all dynamic interactions
+- Load HTMX from CDN (no local JavaScript files needed)
+- Implement proper Firebase auth with session cookies
 - Use ADK Artifacts for any file operations
 - Handle errors with try/except blocks
-- Use environment variables for configuration
-- Follow the single-file prototype structure
+- Use environment variables for all configuration
+- Mount static files only for CSS and images
+- Use server-side rendering with streaming responses
 
 ### What to NEVER suggest:
+- Jinja2 templates or other template engines
+- Complex JavaScript frameworks or libraries
 - Alternative frameworks (no Django, Flask, etc.)
 - Different databases (no PostgreSQL, MongoDB, etc.) 
 - Custom file upload implementations
@@ -108,48 +366,68 @@ def handle_resume(tool_context: ToolContext, filename: str):
 - SQLite for any environment
 - Alternative authentication systems
 - Different cloud providers
+- Separate backend/frontend applications
+- Client-side routing or SPA patterns
 
 ### Error Handling Pattern:
 ```python
 try:
-    result = context.save_artifact(filename, artifact)
-except ValueError:
-    return "Service not configured"
+    result = await operation()
+    return success_response(result)
+except ValueError as e:
+    return error_response(f"Validation error: {str(e)}", 400)
 except Exception as e:
-    return f"Operation failed: {str(e)}"
-```
-
-### Environment Configuration:
-```python
-import os
-
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+    print(f"Unexpected error: {e}")
+    return error_response("Internal server error", 500)
 ```
 
 ## Development Focus
 - Keep it simple - this is an MVP prototype
 - Prioritize working end-to-end functionality over complex features
-- User types: "job_seeker" and "recruiter" only
+- User types: "company" and "talent" only
 - Single agent handles both user types with context awareness
 - File uploads through chat interface using ADK
+- Use FastHTML for reactive UI without complex JavaScript
 
 ## Common Mistakes to Avoid
 - Don't create separate services for different user types
-- Don't implement custom session management
-- Don't use localStorage in FastHTML (use server-side state)
-- Don't create complex database schemas
+- Don't implement complex state management (use server-side state)
+- Don't use localStorage extensively (prefer server sessions)
+- Don't create complex database schemas in Firestore
 - Don't suggest non-Google cloud services
+- Don't separate FastAPI and FastHTML into different applications
 
-## File Structure
-```
-/
-├── main.py              # Single FastAPI app file
-├── .env                 # Environment variables
-├── pyproject.toml       # UV dependencies
-├── claude.md            # Full technical documentation
-└── .cursorrules         # This file
-```
+## Key FastHTML + HTMX Patterns
+- **Pure Python Components**: All UI components are Python functions returning FastHTML elements
+- **HTMX for Interactivity**: Use `hx_post`, `hx_get`, `hx_target`, `hx_swap` for dynamic updates
+- **Server-Side Rendering**: Generate HTML on the server, stream to client
+- **Minimal JavaScript**: Only HTMX loaded from CDN, no custom JS files
+- **Form-Based Interactions**: Use forms with HTMX attributes instead of JavaScript event handlers
+- **Streaming Chat**: Use chunked transfer encoding for real-time chat responses
+- **Component Composition**: Build complex pages by composing simple FastHTML functions
+
+### Chat Interface Pattern with Streaming
+```python
+from fastapi.responses import StreamingResponse
+import json
+
+@app.post("/api/chat")
+async def chat_stream(request: Request, user = Depends(require_auth)):
+    form_data = await request.form()
+    message = form_data.get("message")
+    
+    async def generate_response():
+        # Stream the user message first
+        yield create_chat_message(message, "").render()
+        
+        # Stream AI response as it generates
+        response_parts = []
+        async for chunk in runner.run_stream(message, user_context=user):
+            response_parts.append(chunk)
+            # Update the assistant message div with accumulated response
+            partial_response = "".join(response_parts)
+            yield f'<div hx-swap-oob="innerHTML:#assistant-response">{partial_response}</div>'
+    
+    return StreamingResponse(generate_response(), media_type="text/html")
 
 When writing code, always reference these patterns and constraints. Focus on MVP functionality that validates the core user flow: signup → dashboard → chat with agents.
