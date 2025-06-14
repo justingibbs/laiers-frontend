@@ -1,0 +1,22 @@
+# Ignore all .env files by default
+.env*
+
+# But allow .env.example
+!.env.example
+
+# Ignore other sensitive files
+firebase-credentials.json
+*.pem
+*.key
+*.cert
+
+# Ignore build and cache directories
+__pycache__/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Ignore lock files
+*.lock
+uv.lock

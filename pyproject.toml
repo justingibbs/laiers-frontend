@@ -1,7 +1,23 @@
 [project]
 name = "laiers"
 version = "0.1.0"
-description = "Add your description here"
+description = "Job matching MVP with AI agents"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115.12",
+    "firebase-admin>=6.9.0",
+    "google-adk>=1.2.1",
+    "python-fasthtml>=0.12.19",
+    "uvicorn>=0.27.1",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.6.1",
+    "google-cloud-storage>=2.14.0",
+    "google-cloud-firestore>=2.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "pytest>=8.4.0",
+]
