@@ -1,9 +1,249 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Welcome</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Matching App</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            padding: 2rem;
+            text-align: center;
+        }
+        .auth-form {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 1rem;
+        }
+        .success {
+            color: #28a745;
+            margin-top: 1rem;
+        }
+        .user-type-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .user-type-btn {
+            flex: 1;
+            padding: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            background: white;
+        }
+        .user-type-btn.selected {
+            border-color: #007bff;
+            background: #e6f3ff;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome</h1>
+    <div class="container">
+        <h1>Welcome to Job Matching App</h1>
+        
+        <div class="auth-form">
+            <div class="user-type-selector">
+                <button class="user-type-btn selected" data-type="talent">I'm Looking for Work</button>
+                <button class="user-type-btn" data-type="company">I'm Hiring</button>
+            </div>
+            
+            <form id="auth-form">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                
+                <button type="submit" id="submit-btn">Sign In</button>
+                <button type="button" id="register-btn" style="background-color: #28a745;">Create Account</button>
+            </form>
+            
+            <div id="auth-result"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "{{ firebase_config.apiKey }}",
+            authDomain: "{{ firebase_config.authDomain }}",
+            projectId: "{{ firebase_config.projectId }}",
+            storageBucket: "{{ firebase_config.storageBucket }}",
+            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+            appId: "{{ firebase_config.appId }}"
+        };
+        firebase.initializeApp(firebaseConfig);
+        
+        let selectedUserType = 'talent';
+        
+        // User type selection
+        document.querySelectorAll('.user-type-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedUserType = btn.dataset.type;
+            });
+        });
+        
+        // Handle registration
+        document.getElementById('register-btn').addEventListener('click', async () => {
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const authResult = document.getElementById('auth-result');
+            
+            // Clear previous errors
+            authResult.innerHTML = '';
+            
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                authResult.innerHTML = `<div class="error">Please enter a valid email address</div>`;
+                return;
+            }
+            
+            // Validate password length
+            if (password.length < 6) {
+                authResult.innerHTML = `<div class="error">Password must be at least 6 characters long</div>`;
+                return;
+            }
+            
+            try {
+                const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                const idToken = await userCredential.user.getIdToken();
+                
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        idToken,
+                        userType: selectedUserType,
+                        email
+                    })
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/dashboard';
+                } else {
+                    const error = await response.json();
+                    authResult.innerHTML = `<div class="error">${error.detail}</div>`;
+                }
+            } catch (error) {
+                let errorMessage = error.message;
+                // Make Firebase error messages more user-friendly
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMessage = 'This email is already registered. Please try logging in instead.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'Please enter a valid email address.';
+                } else if (error.code === 'auth/weak-password') {
+                    errorMessage = 'Password should be at least 6 characters long.';
+                }
+                authResult.innerHTML = `<div class="error">${errorMessage}</div>`;
+            }
+        });
+        
+        // Handle form submission (login)
+        document.getElementById('auth-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const authResult = document.getElementById('auth-result');
+            
+            // Clear previous errors
+            authResult.innerHTML = '';
+            
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                authResult.innerHTML = `<div class="error">Please enter a valid email address</div>`;
+                return;
+            }
+            
+            try {
+                const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
+                const idToken = await userCredential.user.getIdToken();
+                
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ idToken })
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/dashboard';
+                } else {
+                    const error = await response.json();
+                    authResult.innerHTML = `<div class="error">${error.detail}</div>`;
+                }
+            } catch (error) {
+                let errorMessage = error.message;
+                // Make Firebase error messages more user-friendly
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    errorMessage = 'Invalid email or password. Please try again.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'Please enter a valid email address.';
+                }
+                authResult.innerHTML = `<div class="error">${errorMessage}</div>`;
+            }
+        });
+    </script>
 </body>
 </html> 

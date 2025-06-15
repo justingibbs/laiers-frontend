@@ -11,6 +11,7 @@ wheels/
 
 # Firebase
 firebase-credentials.json
+firebase-web-config.json
 
 # Environment variables
 .env

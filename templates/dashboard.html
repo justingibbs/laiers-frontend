@@ -1,40 +1,48 @@
-{% extends "base.html" %}
-
-{% block title %}Dashboard - Job Matching App{% endblock %}
-
-{% block header %}
-<div class="dashboard-header">
-    <h1>AI Job Assistant</h1>
-    <div class="user-info">
-        <span>Welcome, {{ user.email }}</span>
-        <span class="user-type">{{ user_profile.user_type | title }}</span>
-    </div>
-</div>
-{% endblock %}
-
-{% block content %}
-<div class="dashboard-container">
-    <div id="chat-messages" class="chat-container">
-        {% for message in messages %}
-            {% include "components/messages.html" %}
-        {% endfor %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .welcome-message {
+            font-size: 24px;
+        }
+        .sign-out {
+            background-color: #dc3545;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .sign-out:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-header">
+        <div class="welcome-message">
+            Welcome, {{ user.name }}!
+        </div>
+        <a href="/" class="sign-out">Sign Out</a>
     </div>
     
-    <form 
-        hx-post="/api/chat" 
-        hx-target="#chat-messages" 
-        hx-swap="beforeend"
-        hx-trigger="submit"
-        class="chat-form"
-    >
-        <input 
-            type="text" 
-            name="message" 
-            placeholder="Ask me anything about jobs..." 
-            required 
-            autocomplete="off"
-        >
-        <button type="submit">Send</button>
-    </form>
-</div>
-{% endblock %} 
+    <div class="dashboard-content">
+        <h2>Your Dashboard</h2>
+        <p>This is a simple dashboard. More features coming soon!</p>
+    </div>
+</body>
+</html> 
