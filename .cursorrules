@@ -1,11 +1,12 @@
 # Job Matching App - Cursor AI Rules
 
 ## Project Context
-Building a job matching MVP where Talent and Companies chat with AI agents. Single-file FastAPI prototype with FastHTML frontend.
+Building a job matching MVP where Talent and Companies chat with AI agents. Single-file FastAPI prototype with Jinja2 templates and HTMX frontend.
 
 ## Required Tech Stack (DO NOT SUGGEST ALTERNATIVES)
 - Python with UV dependency management
-- FastAPI backend with FastHTML frontend
+- FastAPI backend with Jinja2 templates
+- HTMX for dynamic frontend interactions
 - Google ADK for agent orchestration
 - Vertex AI (Gemini) for LLM backend
 - Firebase Authentication
@@ -19,11 +20,13 @@ Building a job matching MVP where Talent and Companies chat with AI agents. Sing
 - Use Firestore for everything (no SQLite, no other databases)
 - ADK Artifacts for file handling (no custom upload logic)
 - Environment-based configuration only
+- Jinja2 templates for HTML rendering
+- HTMX for dynamic interactions (no complex JavaScript)
 
 ## Project Structure
 ```
 job-matching-app/
-├── main.py                 # Single FastAPI app with FastHTML routes
+├── main.py                 # Single FastAPI app with Jinja2 templates
 ├── pyproject.toml         # UV project configuration & dependencies
 ├── uv.lock               # UV lockfile (auto-generated)
 ├── .env                   # Environment variables (local dev)
@@ -31,10 +34,22 @@ job-matching-app/
 ├── .gitignore            # Git ignore file
 ├── README.md             # Project documentation
 ├── claude.md             # Project documentation for Claude Code
-├── static/               # Minimal static assets
+├── templates/            # Jinja2 template files
+│   ├── base.html         # Base template with common elements
+│   ├── landing.html      # Landing page
+│   ├── login.html        # Login page
+│   ├── register.html     # Registration page
+│   ├── dashboard.html    # Main dashboard
+│   └── components/       # Reusable template components
+│       ├── chat.html     # Chat interface components
+│       ├── forms.html    # Form components
+│       └── messages.html # Message components
+├── static/               # Static assets
 │   ├── css/
-│   │   └── styles.css    # Basic styling (optional)
-│   └── images/           # Static images only
+│   │   └── styles.css    # Main stylesheet
+│   ├── js/
+│   │   └── app.js        # Minimal custom JavaScript (if needed)
+│   └── images/           # Static images
 ├── config/
 │   └── firebase_config.json  # Firebase service account key
 ├── utils/                # Utility modules (keep minimal)
@@ -51,99 +66,190 @@ job-matching-app/
 
 ### Main Application Structure
 ```python
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, Form
 from fastapi.staticfiles import StaticFiles
-from fasthtml.common import *
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, RedirectResponse
 from google_adk import get_fast_api_app
 
 # Initialize FastAPI with ADK
 app = get_fast_api_app()
 
-# Mount static files (minimal - just CSS and images)
+# Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
-# FastHTML routes (no templates needed)
-@app.get("/")
-def landing_page():
-    return create_landing_page()
+# Routes with Jinja2 templates
+@app.get("/", response_class=HTMLResponse)
+async def landing_page(request: Request):
+    """Landing page with role selection"""
+    return templates.TemplateResponse("landing.html", {"request": request})
 
-@app.get("/login")
-def login_page():
-    return create_login_page()
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request, user_type: str = "talent"):
+    """Registration page"""
+    if user_type not in ["company", "talent"]:
+        user_type = "talent"
+    return templates.TemplateResponse("register.html", {
+        "request": request,
+        "user_type": user_type
+    })
 
-@app.get("/dashboard")
-def dashboard_page(user = Depends(require_auth)):
-    return create_dashboard_page(user)
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Login page"""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request, user = Depends(require_auth)):
+    """Dashboard page for authenticated users"""
+    user_profile = await get_user_profile(user['uid'])
+    if not user_profile:
+        return RedirectResponse(url="/register", status_code=302)
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": user,
+        "user_profile": user_profile
+    })
 
 @app.post("/api/chat")
-async def chat_endpoint(request: Request, user = Depends(require_auth)):
-    return await handle_chat_message(request, user)
+async def chat_endpoint(request: Request, message: str = Form(...), user = Depends(require_auth)):
+    return await handle_chat_message(request, message, user)
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 ```
 
-### FastHTML + HTMX Component Pattern
-```python
-from fasthtml.common import *
+### Base Template Pattern (templates/base.html)
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Job Matching App{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header>
+        {% block header %}
+        <h1>Job Matching App</h1>
+        {% endblock %}
+    </header>
+    
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer>
+        {% block footer %}{% endblock %}
+    </footer>
+    
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
+```
 
-def create_landing_page():
-    return Html(
-        Head(
-            Title("Job Matching App"),
-            Link(rel="stylesheet", href="/static/css/styles.css"),
-            Script(src="https://unpkg.com/htmx.org@1.9.10")
-        ),
-        Body(
-            Header(H1("Find Your Perfect Match")),
-            Main(
-                Div(
-                    H2("Talent & Company Connected"),
-                    A("Get Started", href="/login", cls="btn-primary")
-                )
-            )
-        )
-    )
+### Dashboard Template with HTMX (templates/dashboard.html)
+```html
+{% extends "base.html" %}
 
-def create_dashboard_page(user_data: dict):
-    return Html(
-        Head(
-            Title("Chat Dashboard"),
-            Link(rel="stylesheet", href="/static/css/styles.css"),
-            Script(src="https://unpkg.com/htmx.org@1.9.10")
-        ),
-        Body(
-            Header(
-                H1("AI Job Assistant"),
-                P(f"Welcome, {user_data['email']} ({user_data.get('user_type', 'user')})")
-            ),
-            Main(
-                Div(id="chat-messages", cls="chat-container"),
-                Form(
-                    Input(
-                        type="text", 
-                        name="message", 
-                        placeholder="Ask me anything about jobs...",
-                        required=True
-                    ),
-                    Button("Send", type="submit"),
-                    hx_post="/api/chat",
-                    hx_target="#chat-messages",
-                    hx_swap="beforeend",
-                    hx_trigger="submit",
-                    cls="chat-form"
-                )
-            )
-        )
-    )
+{% block title %}Dashboard - Job Matching App{% endblock %}
 
-def create_chat_message(message: str, response: str):
-    return Div(
-        Div(message, cls="user-message"),
-        Div(response, cls="assistant-message"),
-        cls="message-pair"
-    )
+{% block header %}
+<div class="dashboard-header">
+    <h1>AI Job Assistant</h1>
+    <div class="user-info">
+        <span>Welcome, {{ user.email }}</span>
+        <span class="user-type">{{ user_profile.user_type | title }}</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div id="chat-messages" class="chat-container">
+        <!-- Chat messages will be loaded here -->
+    </div>
+    
+    <form 
+        hx-post="/api/chat" 
+        hx-target="#chat-messages" 
+        hx-swap="beforeend"
+        hx-trigger="submit"
+        class="chat-form"
+    >
+        <input 
+            type="text" 
+            name="message" 
+            placeholder="Ask me anything about jobs..." 
+            required 
+            autocomplete="off"
+        >
+        <button type="submit">Send</button>
+    </form>
+</div>
+{% endblock %}
+```
+
+### Chat Message Component (templates/components/messages.html)
+```html
+<!-- User message -->
+<div class="message-pair">
+    <div class="user-message">
+        <div class="message-content">{{ message }}</div>
+        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    </div>
+    
+    <!-- Assistant response -->
+    <div class="assistant-message">
+        <div class="message-content">{{ response }}</div>
+        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    </div>
+</div>
+```
+
+### Login Form Template (templates/login.html)
+```html
+{% extends "base.html" %}
+
+{% block title %}Login - Job Matching App{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-form">
+        <h2>Sign In</h2>
+        
+        <form 
+            hx-post="/api/auth/login" 
+            hx-target="#auth-result"
+            hx-swap="innerHTML"
+        >
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="btn-primary">Sign In</button>
+        </form>
+        
+        <div id="auth-result"></div>
+        
+        <p>Don't have an account? 
+            <a href="/register">Sign up here</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
 ```
 
 ### User Data Models (Always Pydantic)
@@ -173,12 +279,20 @@ class ChatMessage(BaseModel):
     response: str
     timestamp: datetime
     session_id: str
+
+class TemplateContext(BaseModel):
+    """Context data for templates"""
+    user: Optional[User] = None
+    user_profile: Optional[UserProfile] = None
+    messages: list[ChatMessage] = []
+    error: Optional[str] = None
+    success: Optional[str] = None
 ```
 
 ### Firebase Auth Pattern
 ```python
 # utils/auth.py
-from fastapi import Depends, HTTPException, Cookie
+from fastapi import Depends, HTTPException, Cookie, Request
 from firebase_admin import auth
 import os
 
@@ -194,6 +308,15 @@ async def get_current_user(session_token: str = Cookie(None)):
 
 async def require_auth(user = Depends(get_current_user)):
     return user
+
+async def optional_auth(session_token: str = Cookie(None)):
+    """Optional authentication for pages that work with or without login"""
+    if not session_token:
+        return None
+    try:
+        return auth.verify_session_cookie(session_token)
+    except Exception:
+        return None
 ```
 
 ### Firestore Helper Pattern
@@ -227,6 +350,61 @@ class FirestoreService:
         except Exception as e:
             print(f"Error getting user: {e}")
             return None
+
+    @staticmethod
+    async def save_chat_message(message: ChatMessage) -> bool:
+        try:
+            doc_ref = db.collection("chat_messages").add(message.model_dump())
+            return True
+        except Exception as e:
+            print(f"Error saving chat message: {e}")
+            return False
+```
+
+### HTMX Response Helper
+```python
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory="templates")
+
+async def render_partial(template_name: str, context: dict) -> HTMLResponse:
+    """Render a partial template for HTMX responses"""
+    html_content = templates.get_template(template_name).render(context)
+    return HTMLResponse(content=html_content)
+
+# Usage in endpoints
+@app.post("/api/chat")
+async def chat_endpoint(
+    request: Request, 
+    message: str = Form(...), 
+    user = Depends(require_auth)
+):
+    try:
+        # Process message with AI agent
+        response = await process_chat_message(message, user)
+        
+        # Save to Firestore
+        chat_message = ChatMessage(
+            user_id=user['uid'],
+            message=message,
+            response=response,
+            timestamp=datetime.now(),
+            session_id=request.session.get('session_id', 'default')
+        )
+        await FirestoreService.save_chat_message(chat_message)
+        
+        # Return HTMX partial
+        return await render_partial("components/messages.html", {
+            "message": message,
+            "response": response,
+            "timestamp": datetime.now()
+        })
+        
+    except Exception as e:
+        return await render_partial("components/error.html", {
+            "error": "Failed to process message"
+        })
 ```
 
 ### ADK Agent Configuration
@@ -251,28 +429,6 @@ artifact_service = GcsArtifactService(
 )
 
 runner = Runner(agent=agent, artifact_service=artifact_service)
-```
-
-### File Handling (Always ADK Artifacts)
-```python
-from google.adk.tools.tool_context import ToolContext
-
-async def handle_file_upload(tool_context: ToolContext, user_id: str, filename: str):
-    try:
-        # User-scoped artifacts persist across sessions
-        artifact_key = f"user_{user_id}:{filename}"
-        artifact = tool_context.load_artifact(artifact_key)
-        
-        if artifact and artifact.inline_data:
-            # Process the file content
-            return process_file_content(artifact.inline_data.data)
-        else:
-            return "File not found or empty"
-            
-    except ValueError:
-        return "Artifact service not configured"
-    except Exception as e:
-        return f"File processing failed: {str(e)}"
 ```
 
 ## Environment Configuration
@@ -324,14 +480,14 @@ name = "job-matching-app"
 version = "0.1.0"
 dependencies = [
     "fastapi",
-    "fasthtml",
+    "jinja2",
+    "python-multipart",
     "google-adk",
     "google-cloud-firestore", 
     "firebase-admin",
     "pydantic[email]",
     "python-dotenv",
-    "uvicorn[standard]",
-    "python-multipart"
+    "uvicorn[standard]"
 ]
 
 [tool.uv]
@@ -346,18 +502,20 @@ dev-dependencies = [
 
 ### What to ALWAYS do:
 - Keep main.py as the single entry point
-- Use FastHTML components as Python functions returning HTML elements
+- Use Jinja2 templates for all HTML rendering
 - Use HTMX attributes for all dynamic interactions
-- Load HTMX from CDN (no local JavaScript files needed)
+- Load HTMX from CDN (minimal custom JavaScript)
 - Implement proper Firebase auth with session cookies
 - Use ADK Artifacts for any file operations
 - Handle errors with try/except blocks
 - Use environment variables for all configuration
-- Mount static files only for CSS and images
-- Use server-side rendering with streaming responses
+- Separate templates into logical components
+- Use template inheritance with base.html
+- Pass context data as dictionaries to templates
+- Use Pydantic models for all data validation
 
 ### What to NEVER suggest:
-- Jinja2 templates or other template engines
+- FastHTML or other Python-based HTML generation
 - Complex JavaScript frameworks or libraries
 - Alternative frameworks (no Django, Flask, etc.)
 - Different databases (no PostgreSQL, MongoDB, etc.) 
@@ -368,17 +526,44 @@ dev-dependencies = [
 - Different cloud providers
 - Separate backend/frontend applications
 - Client-side routing or SPA patterns
+- Template engines other than Jinja2
+
+### Template Organization Rules:
+- Use `templates/base.html` as the base template
+- Create page-specific templates in `templates/`
+- Use `templates/components/` for reusable partial templates
+- Always extend base template: `{% extends "base.html" %}`
+- Use meaningful block names: `{% block content %}`, `{% block title %}`
+- Pass `request` object to all template responses
+- Use `{{ url_for('static', path='/css/styles.css') }}` for static files
+
+### HTMX Integration Rules:
+- Use `hx-post`, `hx-get` for dynamic requests
+- Use `hx-target` to specify where responses go
+- Use `hx-swap` to control how content is inserted
+- Return partial templates for HTMX endpoints
+- Use `hx-trigger` for custom event handling
+- Prefer form-based interactions over JavaScript events
 
 ### Error Handling Pattern:
 ```python
 try:
     result = await operation()
-    return success_response(result)
+    return templates.TemplateResponse("success.html", {
+        "request": request,
+        "result": result
+    })
 except ValueError as e:
-    return error_response(f"Validation error: {str(e)}", 400)
+    return templates.TemplateResponse("error.html", {
+        "request": request,
+        "error": f"Validation error: {str(e)}"
+    }, status_code=400)
 except Exception as e:
     print(f"Unexpected error: {e}")
-    return error_response("Internal server error", 500)
+    return templates.TemplateResponse("error.html", {
+        "request": request,
+        "error": "Internal server error"
+    }, status_code=500)
 ```
 
 ## Development Focus
@@ -387,7 +572,8 @@ except Exception as e:
 - User types: "company" and "talent" only
 - Single agent handles both user types with context awareness
 - File uploads through chat interface using ADK
-- Use FastHTML for reactive UI without complex JavaScript
+- Use Jinja2 + HTMX for reactive UI without complex JavaScript
+- Template-first approach: design templates before implementing routes
 
 ## Common Mistakes to Avoid
 - Don't create separate services for different user types
@@ -395,39 +581,46 @@ except Exception as e:
 - Don't use localStorage extensively (prefer server sessions)
 - Don't create complex database schemas in Firestore
 - Don't suggest non-Google cloud services
-- Don't separate FastAPI and FastHTML into different applications
+- Don't separate FastAPI templates into different applications
+- Don't forget to pass `request` object to template responses
+- Don't mix FastHTML patterns with Jinja2 templates
 
-## Key FastHTML + HTMX Patterns
-- **Pure Python Components**: All UI components are Python functions returning FastHTML elements
-- **HTMX for Interactivity**: Use `hx_post`, `hx_get`, `hx_target`, `hx_swap` for dynamic updates
-- **Server-Side Rendering**: Generate HTML on the server, stream to client
-- **Minimal JavaScript**: Only HTMX loaded from CDN, no custom JS files
-- **Form-Based Interactions**: Use forms with HTMX attributes instead of JavaScript event handlers
-- **Streaming Chat**: Use chunked transfer encoding for real-time chat responses
-- **Component Composition**: Build complex pages by composing simple FastHTML functions
+## Key Jinja2 + HTMX Patterns
+- **Template Inheritance**: Use base templates and extend them
+- **Partial Templates**: Create components for HTMX responses
+- **Context Passing**: Always pass structured data to templates
+- **HTMX for Interactivity**: Use `hx-*` attributes for dynamic updates
+- **Server-Side Rendering**: Generate HTML on server, enhance with HTMX
+- **Minimal JavaScript**: Only HTMX loaded from CDN, minimal custom JS
+- **Form-Based Interactions**: Use forms with HTMX attributes
+- **Streaming Chat**: Use Server-Sent Events or WebSockets if needed
+- **Component Reuse**: Create reusable template components
 
-### Chat Interface Pattern with Streaming
+### Chat Interface Pattern with HTMX
 ```python
-from fastapi.responses import StreamingResponse
-import json
-
 @app.post("/api/chat")
-async def chat_stream(request: Request, user = Depends(require_auth)):
-    form_data = await request.form()
-    message = form_data.get("message")
-    
-    async def generate_response():
-        # Stream the user message first
-        yield create_chat_message(message, "").render()
+async def chat_stream(
+    request: Request, 
+    message: str = Form(...), 
+    user = Depends(require_auth)
+):
+    try:
+        # Process with AI agent
+        response = await runner.run(message, user_context=user)
         
-        # Stream AI response as it generates
-        response_parts = []
-        async for chunk in runner.run_stream(message, user_context=user):
-            response_parts.append(chunk)
-            # Update the assistant message div with accumulated response
-            partial_response = "".join(response_parts)
-            yield f'<div hx-swap-oob="innerHTML:#assistant-response">{partial_response}</div>'
-    
-    return StreamingResponse(generate_response(), media_type="text/html")
+        # Return chat message component
+        return templates.TemplateResponse("components/messages.html", {
+            "request": request,
+            "message": message,
+            "response": response,
+            "timestamp": datetime.now()
+        })
+        
+    except Exception as e:
+        return templates.TemplateResponse("components/error.html", {
+            "request": request,
+            "error": "Failed to process message"
+        })
+```
 
-When writing code, always reference these patterns and constraints. Focus on MVP functionality that validates the core user flow: signup → dashboard → chat with agents.
+When writing code, always reference these patterns and constraints. Focus on MVP functionality that validates the core user flow: signup → dashboard → chat with agents. Use Jinja2 templates for clear separation of concerns and better maintainability.

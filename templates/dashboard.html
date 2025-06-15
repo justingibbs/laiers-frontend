@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Job Matching App{% endblock %}
+
+{% block header %}
+<div class="dashboard-header">
+    <h1>AI Job Assistant</h1>
+    <div class="user-info">
+        <span>Welcome, {{ user.email }}</span>
+        <span class="user-type">{{ user_profile.user_type | title }}</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div id="chat-messages" class="chat-container">
+        {% for message in messages %}
+            {% include "components/messages.html" %}
+        {% endfor %}
+    </div>
+    
+    <form 
+        hx-post="/api/chat" 
+        hx-target="#chat-messages" 
+        hx-swap="beforeend"
+        hx-trigger="submit"
+        class="chat-form"
+    >
+        <input 
+            type="text" 
+            name="message" 
+            placeholder="Ask me anything about jobs..." 
+            required 
+            autocomplete="off"
+        >
+        <button type="submit">Send</button>
+    </form>
+</div>
+{% endblock %} 

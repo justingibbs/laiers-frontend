@@ -6,14 +6,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
-    "python-fasthtml",
+    "jinja2",
+    "python-multipart",
     "google-adk",
     "google-cloud-firestore", 
     "firebase-admin",
     "pydantic[email]",
     "python-dotenv",
-    "uvicorn[standard]",
-    "python-multipart"
+    "uvicorn[standard]"
 ]
 
 [dependency-groups]

@@ -1,0 +1,34 @@
+{% macro chat_form(target_id="#chat-messages") %}
+<form 
+    hx-post="/api/chat" 
+    hx-target="{{ target_id }}" 
+    hx-swap="beforeend"
+    hx-trigger="submit"
+    class="chat-form"
+>
+    <input 
+        type="text" 
+        name="message" 
+        placeholder="Ask me anything about jobs..." 
+        required 
+        autocomplete="off"
+    >
+    <button type="submit">Send</button>
+</form>
+{% endmacro %}
+
+{% macro chat_container(messages=[], id="chat-messages") %}
+<div id="{{ id }}" class="chat-container">
+    {% for message in messages %}
+        {% include "components/messages.html" %}
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro chat_typing_indicator() %}
+<div class="typing-indicator" hx-swap-oob="true">
+    <div class="dot"></div>
+    <div class="dot"></div>
+    <div class="dot"></div>
+</div>
+{% endmacro %} 

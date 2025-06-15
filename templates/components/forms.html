@@ -1,0 +1,28 @@
+{% macro input_field(name, label, type="text", required=false, placeholder="") %}
+<div class="form-group">
+    <label for="{{ name }}">{{ label }}</label>
+    <input 
+        type="{{ type }}" 
+        name="{{ name }}" 
+        id="{{ name }}"
+        {% if required %}required{% endif %}
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+    >
+</div>
+{% endmacro %}
+
+{% macro submit_button(text="Submit", class="btn-primary") %}
+<button type="submit" class="{{ class }}">{{ text }}</button>
+{% endmacro %}
+
+{% macro form_error(message) %}
+<div class="form-error">
+    {{ message }}
+</div>
+{% endmacro %}
+
+{% macro form_success(message) %}
+<div class="form-success">
+    {{ message }}
+</div>
+{% endmacro %} 

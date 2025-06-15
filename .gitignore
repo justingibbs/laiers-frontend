@@ -15,3 +15,6 @@ firebase-credentials.json
 # Environment variables
 .env
 !.env.example
+
+# Scratch folder
+SCRATCH/
