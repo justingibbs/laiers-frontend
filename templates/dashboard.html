@@ -38,6 +38,7 @@
             padding: 0.5rem 1rem;
             border-radius: 0.25rem;
             cursor: pointer;
+            text-decoration: none;
         }
         .content {
             max-width: 1200px;
@@ -88,7 +89,7 @@
             <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
             <span class="user-type">{{ user_profile.user_type | title }}</span>
         </div>
-        <button class="sign-out" onclick="signOut()">Sign Out</button>
+        <a href="/api/logout" class="sign-out">Sign Out</a>
     </div>
 
     <div class="content">
@@ -152,26 +153,5 @@
             {% endif %}
         </div>
     </div>
-
-    <script>
-        // Initialize Firebase
-        const firebaseConfig = {
-            apiKey: "{{ firebase_config.apiKey }}",
-            authDomain: "{{ firebase_config.authDomain }}",
-            projectId: "{{ firebase_config.projectId }}",
-            storageBucket: "{{ firebase_config.storageBucket }}",
-            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
-            appId: "{{ firebase_config.appId }}"
-        };
-        firebase.initializeApp(firebaseConfig);
-
-        function signOut() {
-            firebase.auth().signOut().then(() => {
-                window.location.href = '/';
-            }).catch((error) => {
-                console.error('Error signing out:', error);
-            });
-        }
-    </script>
 </body>
 </html> 

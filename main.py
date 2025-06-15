@@ -110,11 +110,20 @@ async def require_auth(session_token: str = Cookie(None)) -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 async def landing_page(request: Request):
-    """Simple welcome page"""
-    return templates.TemplateResponse("landing.html", {
-        "request": request,
-        "firebase_config": web_config
-    })
+    """Landing page with role selection"""
+    try:
+        # Load Firebase web config
+        with open("config/firebase-web-config.json") as f:
+            firebase_config = json.load(f)
+            logger.debug("Web Config loaded successfully")
+            
+        return templates.TemplateResponse("landing.html", {
+            "request": request,
+            "firebase_config": firebase_config
+        })
+    except Exception as e:
+        logger.error(f"Error loading landing page: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/register")
 async def register(request: Request):
@@ -228,6 +237,24 @@ async def dashboard(request: Request, user = Depends(require_auth)):
         "user_profile": user_profile,
         "firebase_config": web_config
     })
+
+@app.get("/api/logout")
+async def logout(request: Request):
+    """Logout a user"""
+    try:
+        # Get the session token from the cookie
+        session_token = request.cookies.get("session")
+        if session_token:
+            # Revoke the Firebase session
+            auth.revoke_refresh_tokens(session_token)
+            logger.info("Firebase session token revoked")
+    except Exception as e:
+        logger.error(f"Error during logout: {str(e)}")
+    
+    # Create response and delete cookie
+    response = RedirectResponse(url="/", status_code=302)
+    response.delete_cookie("session")
+    return response
 
 if __name__ == "__main__":
     import uvicorn
