@@ -55,11 +55,6 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
     uv run -- uvicorn main:app --reload --port 8000
     ```
     
-    Can also use, but don't think this is proper anymore
-    ```
-    uv run main.py
-    ```
-    
     Then access the application at:
     ```
     http://localhost:8000
@@ -67,8 +62,65 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
     
     Note: Use `http://` (not `https://`) for local development.
 
-## Setup
+## Development
 
-1. Download your Firebase service account key from the Firebase Console
-2. Save it as `firebase-credentials.json` in the project root
-3. Copy `.env.example` to `.env` and fill in your values
+### Logging and Debugging
+
+The application uses Python's built-in logging module with different levels based on the environment:
+
+- Development (`ENVIRONMENT=development`): DEBUG level logging
+- Production: INFO level logging
+
+Key logging features:
+- Environment variable loading
+- Firebase configuration and initialization
+- User authentication events
+- Firestore operations
+- Error tracking
+
+To view logs:
+```bash
+# Development mode (verbose logging)
+ENVIRONMENT=development uv run -- uvicorn main:app --reload --port 8000
+
+# Production mode (minimal logging)
+ENVIRONMENT=production uv run -- uvicorn main:app --port 8000
+```
+
+### Firebase Setup
+
+1. Enable Firebase Authentication in the Firebase Console
+2. Enable Firestore Database in the Firebase Console
+3. Download your Firebase service account key from the Firebase Console
+4. Save it as `config/firebase-credentials.json`
+5. Copy `.env.example` to `.env` and fill in your values
+
+Note: Firestore collections are created automatically when first used. No manual collection setup is required.
+
+### Firebase Configuration Files
+
+The application requires two Firebase configuration files:
+
+1. **Server-side Configuration** (`config/firebase-credentials.json`):
+   - Service account key for Firebase Admin SDK
+   - Used for server-side operations (auth, Firestore)
+   - Download from Firebase Console > Project Settings > Service Accounts
+   - Contains sensitive credentials - never commit to version control
+
+2. **Client-side Configuration** (`config/firebase-web-config.json`):
+   - Web app configuration for Firebase client SDK
+   - Used for client-side authentication
+   - Download from Firebase Console > Project Settings > General > Your Apps > Web App
+   - Example structure:
+     ```json
+     {
+       "apiKey": "your-api-key",
+       "authDomain": "your-project-id.firebaseapp.com",
+       "projectId": "your-project-id",
+       "storageBucket": "your-project-id.appspot.com",
+       "messagingSenderId": "your-sender-id",
+       "appId": "your-app-id"
+     }
+     ```
+
+Both files should be placed in the `config/` directory. The `.gitignore` file is configured to exclude `firebase-credentials.json` but include `firebase-web-config.json` (with placeholder values).

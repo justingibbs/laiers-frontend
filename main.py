@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import firebase_admin
 from firebase_admin import credentials, auth
+from utils.firestore import FirestoreService
 
 # Load environment variables
 load_dotenv()
@@ -17,6 +18,7 @@ load_dotenv()
 # Environment Configuration
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "config/firebase-credentials.json")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +26,13 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Debug logging for environment variables
+logger.debug("=== Environment Variables ===")
+logger.debug(f"ENVIRONMENT: {ENVIRONMENT}")
+logger.debug(f"FIREBASE_CREDENTIALS_PATH: {FIREBASE_CREDENTIALS_PATH}")
+logger.debug(f"GOOGLE_CLOUD_PROJECT: {GOOGLE_CLOUD_PROJECT}")
+logger.debug("===========================")
 
 # Load Firebase Web Config
 def load_firebase_web_config():
@@ -41,13 +50,13 @@ def load_firebase_web_config():
 
 # Get project ID from web config
 web_config = load_firebase_web_config()
-GOOGLE_CLOUD_PROJECT = web_config.get('projectId')
+PROJECT_ID = web_config.get('projectId')
 
-if not GOOGLE_CLOUD_PROJECT:
+if not PROJECT_ID:
     logger.error("Firebase project ID not found in web config")
     raise ValueError("Firebase project ID not found in web config")
 
-logger.info(f"Using Firebase project ID: {GOOGLE_CLOUD_PROJECT}")
+logger.info(f"Using Firebase project ID: {PROJECT_ID}")
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
@@ -56,11 +65,19 @@ if not firebase_admin._apps:
             cred_data = json.load(f)
             logger.debug("Admin SDK credentials loaded successfully")
         cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-        firebase_admin.initialize_app(cred, {'projectId': GOOGLE_CLOUD_PROJECT})
+        firebase_admin.initialize_app(cred, {'projectId': PROJECT_ID})
         logger.info("Firebase Admin SDK initialized successfully")
     except Exception as e:
         logger.error(f"Error initializing Firebase Admin SDK: {e}")
         raise
+
+# Initialize Firestore Service
+try:
+    firestore_service = FirestoreService()
+    logger.info("Firestore service initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Firestore service: {e}")
+    raise
 
 # Initialize FastAPI
 app = FastAPI(title="Job Matching App")
@@ -116,10 +133,16 @@ async def register(request: Request):
         # Verify the ID token
         try:
             decoded_token = auth.verify_id_token(id_token)
-            logger.info(f"Token verified - UID: {decoded_token.get('uid')}")
+            user_id = decoded_token['uid']
+            logger.info(f"Token verified - UID: {user_id}")
         except Exception as e:
             logger.error(f"Token verification error: {e}")
             raise HTTPException(status_code=400, detail=str(e))
+        
+        # Create user profile in Firestore
+        profile_created = await firestore_service.create_user_profile(user_id, email, user_type)
+        if not profile_created:
+            raise HTTPException(status_code=500, detail="Failed to create user profile")
         
         # Create session cookie
         expires_in = timedelta(days=14)
@@ -192,10 +215,17 @@ async def register_page(request: Request, user_type: str = "talent"):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user = Depends(require_auth)):
     """Dashboard page"""
+    # Get user profile from Firestore
+    user_profile = await firestore_service.get_user_profile(user['uid'])
+    if not user_profile:
+        logger.error(f"No profile found for user: {user['uid']}")
+        return RedirectResponse(url="/register", status_code=302)
+    
     logger.info(f"Dashboard accessed by user: {user.get('email')}")
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user,
+        "user_profile": user_profile,
         "firebase_config": web_config
     })
 

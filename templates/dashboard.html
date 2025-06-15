@@ -1,48 +1,177 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Dashboard</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Job Matching App</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
         }
         .dashboard-header {
+            background-color: #fff;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
         }
-        .welcome-message {
-            font-size: 24px;
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .user-type {
+            background-color: #e3f2fd;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            color: #1976d2;
         }
         .sign-out {
-            background-color: #dc3545;
+            background-color: #f44336;
             color: white;
-            padding: 8px 16px;
             border: none;
-            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
             cursor: pointer;
-            text-decoration: none;
         }
-        .sign-out:hover {
-            background-color: #c82333;
+        .content {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .profile-card {
+            background-color: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        .profile-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .profile-title {
+            margin: 0;
+            color: #333;
+        }
+        .profile-section {
+            margin-bottom: 1.5rem;
+        }
+        .profile-section h3 {
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+        .profile-field {
+            display: flex;
+            margin-bottom: 0.5rem;
+        }
+        .field-label {
+            width: 150px;
+            color: #666;
+        }
+        .field-value {
+            flex: 1;
+            color: #333;
         }
     </style>
 </head>
 <body>
     <div class="dashboard-header">
-        <div class="welcome-message">
-            Welcome, {{ user.name }}!
+        <div class="user-info">
+            <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
+            <span class="user-type">{{ user_profile.user_type | title }}</span>
         </div>
-        <a href="/" class="sign-out">Sign Out</a>
+        <button class="sign-out" onclick="signOut()">Sign Out</button>
     </div>
-    
-    <div class="dashboard-content">
-        <h2>Your Dashboard</h2>
-        <p>This is a simple dashboard. More features coming soon!</p>
+
+    <div class="content">
+        <div class="profile-card">
+            <div class="profile-header">
+                <h2 class="profile-title">Profile Information</h2>
+            </div>
+
+            <div class="profile-section">
+                <h3>Basic Information</h3>
+                <div class="profile-field">
+                    <span class="field-label">Email:</span>
+                    <span class="field-value">{{ user_profile.email }}</span>
+                </div>
+                <div class="profile-field">
+                    <span class="field-label">User Type:</span>
+                    <span class="field-value">{{ user_profile.user_type | title }}</span>
+                </div>
+                {% if user_profile.profile.name %}
+                <div class="profile-field">
+                    <span class="field-label">Name:</span>
+                    <span class="field-value">{{ user_profile.profile.name }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if user_profile.user_type == 'talent' %}
+            <div class="profile-section">
+                <h3>Professional Information</h3>
+                {% if user_profile.profile.skills %}
+                <div class="profile-field">
+                    <span class="field-label">Skills:</span>
+                    <span class="field-value">{{ user_profile.profile.skills | join(', ') }}</span>
+                </div>
+                {% endif %}
+                {% if user_profile.profile.experience_level %}
+                <div class="profile-field">
+                    <span class="field-label">Experience Level:</span>
+                    <span class="field-value">{{ user_profile.profile.experience_level }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if user_profile.user_type == 'company' %}
+            <div class="profile-section">
+                <h3>Company Information</h3>
+                {% if user_profile.profile.company %}
+                <div class="profile-field">
+                    <span class="field-label">Company Name:</span>
+                    <span class="field-value">{{ user_profile.profile.company }}</span>
+                </div>
+                {% endif %}
+                {% if user_profile.profile.industry %}
+                <div class="profile-field">
+                    <span class="field-label">Industry:</span>
+                    <span class="field-value">{{ user_profile.profile.industry }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
     </div>
+
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "{{ firebase_config.apiKey }}",
+            authDomain: "{{ firebase_config.authDomain }}",
+            projectId: "{{ firebase_config.projectId }}",
+            storageBucket: "{{ firebase_config.storageBucket }}",
+            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+            appId: "{{ firebase_config.appId }}"
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        function signOut() {
+            firebase.auth().signOut().then(() => {
+                window.location.href = '/';
+            }).catch((error) => {
+                console.error('Error signing out:', error);
+            });
+        }
+    </script>
 </body>
 </html> 

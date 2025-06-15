@@ -513,6 +513,31 @@ dev-dependencies = [
 - Use template inheritance with base.html
 - Pass context data as dictionaries to templates
 - Use Pydantic models for all data validation
+- Use structured logging with appropriate levels
+- Log all authentication and database operations
+- Keep sensitive data out of logs
+
+### Logging Patterns
+```python
+# Configure logging based on environment
+logging.basicConfig(
+    level=logging.DEBUG if ENVIRONMENT == "development" else logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Log levels by type of operation
+logger.debug("Configuration and initialization details")
+logger.info("Normal operation events")
+logger.warning("Non-critical issues")
+logger.error("Errors that need attention")
+logger.critical("System-breaking issues")
+
+# Structured logging examples
+logger.info(f"User action: {action} - User: {user_id}")
+logger.error(f"Operation failed: {operation} - Error: {str(e)}")
+logger.debug(f"Configuration loaded: {config_name}")
+```
 
 ### What to NEVER suggest:
 - FastHTML or other Python-based HTML generation
@@ -527,6 +552,9 @@ dev-dependencies = [
 - Separate backend/frontend applications
 - Client-side routing or SPA patterns
 - Template engines other than Jinja2
+- Print statements for debugging (use logger instead)
+- Logging of sensitive user data
+- Excessive debug logging in production
 
 ### Template Organization Rules:
 - Use `templates/base.html` as the base template
