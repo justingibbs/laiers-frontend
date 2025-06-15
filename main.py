@@ -8,6 +8,9 @@ from fastapi import FastAPI, Request, Form, HTTPException, Cookie, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from google.adk.cli.fast_api import get_fast_api_app
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
 import firebase_admin
 from firebase_admin import credentials, auth
 from utils.firestore import FirestoreService
@@ -19,6 +22,7 @@ load_dotenv()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "config/firebase-credentials.json")
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
 
 # Configure logging
 logging.basicConfig(
@@ -26,13 +30,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Debug logging for environment variables
-logger.debug("=== Environment Variables ===")
-logger.debug(f"ENVIRONMENT: {ENVIRONMENT}")
-logger.debug(f"FIREBASE_CREDENTIALS_PATH: {FIREBASE_CREDENTIALS_PATH}")
-logger.debug(f"GOOGLE_CLOUD_PROJECT: {GOOGLE_CLOUD_PROJECT}")
-logger.debug("===========================")
 
 # Load Firebase Web Config
 def load_firebase_web_config():
@@ -61,9 +58,6 @@ logger.info(f"Using Firebase project ID: {PROJECT_ID}")
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
     try:
-        with open(FIREBASE_CREDENTIALS_PATH, 'r') as f:
-            cred_data = json.load(f)
-            logger.debug("Admin SDK credentials loaded successfully")
         cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
         firebase_admin.initialize_app(cred, {'projectId': PROJECT_ID})
         logger.info("Firebase Admin SDK initialized successfully")
@@ -79,14 +73,25 @@ except Exception as e:
     logger.error(f"Failed to initialize Firestore service: {e}")
     raise
 
-# Initialize FastAPI
+# Create the main FastAPI app for your custom routes
 app = FastAPI(title="Job Matching App")
 
-# Initialize templates
+# Initialize templates and static files
 templates = Jinja2Templates(directory="templates")
-
-# Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Get ADK app and mount it under /adk path
+AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
+adk_app = get_fast_api_app(
+    agents_dir=AGENT_DIR,
+    session_db_url="sqlite:///./sessions.db",
+    allow_origins=["*"] if ENVIRONMENT == "development" else [],
+    web=True,  # This enables the dev UI at /adk/dev-ui
+    trace_to_cloud=False
+)
+
+# Mount ADK app under /adk prefix
+app.mount("/adk", adk_app)
 
 # Auth Helper Functions
 async def get_current_user(session_token: str = Cookie(None)) -> dict | None:
@@ -108,22 +113,50 @@ async def require_auth(session_token: str = Cookie(None)) -> dict:
         raise HTTPException(status_code=401, detail="Authentication required")
     return user
 
+async def optional_auth(session_token: str = Cookie(None)) -> dict | None:
+    """Optional authentication for pages that work with or without login"""
+    return await get_current_user(session_token)
+
+# Custom Routes - Your main application interface
 @app.get("/", response_class=HTMLResponse)
-async def landing_page(request: Request):
-    """Landing page with role selection"""
+async def landing_page(request: Request, user = Depends(optional_auth)):
+    """Landing page - redirect to dashboard if logged in, otherwise show landing"""
+    if user:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    
     try:
-        # Load Firebase web config
-        with open("config/firebase-web-config.json") as f:
-            firebase_config = json.load(f)
-            logger.debug("Web Config loaded successfully")
-            
         return templates.TemplateResponse("landing.html", {
             "request": request,
-            "firebase_config": firebase_config
+            "firebase_config": web_config
         })
     except Exception as e:
         logger.error(f"Error loading landing page: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request, user_type: str = "talent", user = Depends(optional_auth)):
+    """Registration page - redirect if already logged in"""
+    if user:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    
+    if user_type not in ["company", "talent"]:
+        user_type = "talent"
+    return templates.TemplateResponse("register.html", {
+        "request": request,
+        "user_type": user_type,
+        "firebase_config": web_config
+    })
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, user = Depends(optional_auth)):
+    """Login page - redirect if already logged in"""
+    if user:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "firebase_config": web_config
+    })
 
 @app.post("/api/register")
 async def register(request: Request):
@@ -157,7 +190,7 @@ async def register(request: Request):
         expires_in = timedelta(days=14)
         session_cookie = auth.create_session_cookie(id_token, expires_in=expires_in)
         
-        response = Response(content='{"success": true}', media_type="application/json")
+        response = Response(content='{"success": true, "redirect": "/dashboard"}', media_type="application/json")
         response.set_cookie(
             key="session_token",
             value=session_cookie,
@@ -195,7 +228,7 @@ async def login(request: Request):
         expires_in = timedelta(days=14)
         session_cookie = auth.create_session_cookie(id_token, expires_in=expires_in)
         
-        response = Response(content='{"success": true}', media_type="application/json")
+        response = Response(content='{"success": true, "redirect": "/dashboard"}', media_type="application/json")
         response.set_cookie(
             key="session_token",
             value=session_cookie,
@@ -210,20 +243,9 @@ async def login(request: Request):
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request, user_type: str = "talent"):
-    """Registration page"""
-    if user_type not in ["company", "talent"]:
-        user_type = "talent"
-    return templates.TemplateResponse("register.html", {
-        "request": request,
-        "user_type": user_type,
-        "firebase_config": web_config
-    })
-
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user = Depends(require_auth)):
-    """Dashboard page"""
+    """Dashboard page with chat interface"""
     # Get user profile from Firestore
     user_profile = await firestore_service.get_user_profile(user['uid'])
     if not user_profile:
@@ -238,23 +260,106 @@ async def dashboard(request: Request, user = Depends(require_auth)):
         "firebase_config": web_config
     })
 
-@app.get("/api/logout")
+@app.post("/api/chat")
+async def chat_with_agent(
+    request: Request,
+    message: str = Form(...),
+    user = Depends(require_auth)
+):
+    """Chat with the job matching agent via HTMX"""
+    try:
+        user_profile = await firestore_service.get_user_profile(user['uid'])
+        if not user_profile:
+            raise HTTPException(status_code=400, detail="User profile not found")
+        
+        # Import the agent from the job_matching_agent module
+        from job_matching_agent.agent import root_agent
+        
+        # Create a runner for this chat session
+        session_service = InMemorySessionService()
+        runner = Runner(
+            app_name="job-matching-chat",
+            agent=root_agent,
+            session_service=session_service
+        )
+        
+        # Create user context for the agent
+        user_context = {
+            "user_type": user_profile.get("user_type", "talent"),
+            "email": user.get("email", ""),
+            "user_id": user["uid"]
+        }
+        
+        # Run the agent with user context
+        session_id = f"session_{user['uid']}"
+        response = await runner.run_async(
+            user_id=user["uid"],
+            session_id=session_id,
+            message=message,
+            context=user_context
+        )
+        
+        # Extract the response text
+        response_text = response.get("response", "I'm sorry, I couldn't process that request.")
+        
+        # Return HTMX partial template
+        return templates.TemplateResponse("components/chat_message.html", {
+            "request": request,
+            "user_message": message,
+            "agent_response": response_text,
+            "timestamp": datetime.now()
+        })
+        
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return templates.TemplateResponse("components/chat_error.html", {
+            "request": request,
+            "error": "Failed to process message. Please try again."
+        })
+
+@app.post("/api/logout")
 async def logout(request: Request):
     """Logout a user"""
     try:
-        # Get the session token from the cookie
-        session_token = request.cookies.get("session")
+        session_token = request.cookies.get("session_token")
         if session_token:
-            # Revoke the Firebase session
-            auth.revoke_refresh_tokens(session_token)
-            logger.info("Firebase session token revoked")
+            decoded_token = auth.verify_session_cookie(session_token)
+            user_id = decoded_token.get('uid')
+            if user_id:
+                auth.revoke_refresh_tokens(user_id)
+                logger.info(f"Firebase tokens revoked for user: {user_id}")
     except Exception as e:
         logger.error(f"Error during logout: {str(e)}")
     
-    # Create response and delete cookie
-    response = RedirectResponse(url="/", status_code=302)
-    response.delete_cookie("session")
+    response = Response(content='{"success": true, "redirect": "/"}', media_type="application/json")
+    response.delete_cookie("session_token")
     return response
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "environment": ENVIRONMENT,
+        "firebase_project": PROJECT_ID,
+        "adk_mounted": True
+    }
+
+# Debug route to test ADK integration
+@app.get("/debug/adk")
+async def debug_adk():
+    """Debug endpoint to check ADK integration"""
+    try:
+        from job_matching_agent.agent import root_agent
+        return {
+            "agent_name": root_agent.name,
+            "agent_model": root_agent.model,
+            "adk_dev_ui": "/adk/dev-ui",
+            "agent_endpoint": f"/adk/apps/{root_agent.name}/users/test/sessions/test"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

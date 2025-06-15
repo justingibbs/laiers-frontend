@@ -1,0 +1,14 @@
+<div class="message-pair">
+    <!-- User message -->
+    <div class="user-message">
+        <div class="message-content">{{ user_message }}</div>
+        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    </div>
+    
+    <!-- Agent response -->
+    <div class="agent-message">
+        <div class="message-avatar">🤖</div>
+        <div class="message-content">{{ agent_response }}</div>
+        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    </div>
+</div>
