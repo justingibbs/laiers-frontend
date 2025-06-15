@@ -5,7 +5,7 @@ An agent-powered job matching platform that revolutionizes hiring by identifying
 
 ## Project Setup
 
-This project uses [UV](https://github.com/astral-sh/uv) for dependency management.
+This project uses [UV](https://github.com/astral-sh/uv) for dependency management and Google ADK (Agent Development Kit) for AI-powered agent functionality.
 
 1.  **Clone the repository:**
     ```bash
@@ -47,6 +47,7 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
        VERTEX_AI_LOCATION=us-central1
        FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
        ADK_BUCKET_NAME=your-bucket-name
+       GOOGLE_GENAI_USE_VERTEXAI=true
        ```
 
 5.  **Run the application:**
@@ -62,6 +63,46 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
     
     Note: Use `http://` (not `https://`) for local development.
 
+## Application URLs
+
+Once the application is running, you can access these different interfaces:
+
+### Main Application
+- **Landing Page**: `http://localhost:8000/` - User registration and login
+- **Registration**: `http://localhost:8000/register?user_type=talent` or `http://localhost:8000/register?user_type=company`
+- **Login**: `http://localhost:8000/login`
+- **Dashboard**: `http://localhost:8000/dashboard` - Main user interface with AI chat assistant
+
+### Development & Debugging
+- **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` - Google ADK development interface for testing agents
+- **API Documentation**: `http://localhost:8000/adk/docs` - ADK API documentation
+- **Debug Info**: `http://localhost:8000/debug/adk` - Agent configuration and status
+- **Health Check**: `http://localhost:8000/health` - Application health status
+
+### API Endpoints
+- **Chat with Agent**: `POST /api/chat` - HTMX endpoint for chat interface
+- **User Registration**: `POST /api/register` - Firebase registration endpoint
+- **User Login**: `POST /api/login` - Firebase login endpoint
+- **Logout**: `POST /api/logout` - User logout endpoint
+
+## Project Architecture
+
+### ADK Integration
+The application uses Google's Agent Development Kit (ADK) to power the AI agent functionality:
+
+- **Agent Structure**: The job matching agent is defined in `job_matching_agent/agent.py`
+- **FastAPI Integration**: ADK provides a pre-configured FastAPI app mounted under `/adk`
+- **Custom UI**: The main application provides custom authentication and user interface
+- **Chat Interface**: Users interact with the agent through a custom HTMX-powered chat interface
+
+### User Flow
+1. **Landing Page** - Users choose between "Talent" or "Company" registration
+2. **Registration/Login** - Firebase authentication with user type selection
+3. **Dashboard** - Two-panel interface:
+   - Left: User profile information
+   - Right: AI chat assistant powered by ADK agent
+4. **Agent Interaction** - Context-aware conversations based on user type (talent vs company)
+
 ## Development
 
 ### Logging and Debugging
@@ -76,6 +117,7 @@ Key logging features:
 - Firebase configuration and initialization
 - User authentication events
 - Firestore operations
+- ADK agent mounting and configuration
 - Error tracking
 
 To view logs:
@@ -86,6 +128,14 @@ ENVIRONMENT=development uv run -- uvicorn main:app --reload --port 8000
 # Production mode (minimal logging)
 ENVIRONMENT=production uv run -- uvicorn main:app --port 8000
 ```
+
+### Testing the Agent
+
+You can test the AI agent in multiple ways:
+
+1. **Custom Chat Interface**: Use the dashboard at `http://localhost:8000/dashboard` after logging in
+2. **ADK Dev UI**: Use the development interface at `http://localhost:8000/adk/dev-ui/`
+3. **Direct API**: Make POST requests to `/adk/apps/job_matching_agent/users/{user_id}/sessions/{session_id}`
 
 ### Firebase Setup
 
@@ -124,3 +174,59 @@ The application requires two Firebase configuration files:
      ```
 
 Both files should be placed in the `config/` directory. The `.gitignore` file is configured to exclude `firebase-credentials.json` but include `firebase-web-config.json` (with placeholder values).
+
+## Project Structure
+
+```
+laiers/
+├── main.py                     # Main FastAPI application with ADK integration
+├── job_matching_agent/         # ADK agent directory
+│   ├── __init__.py            # Agent module exports
+│   └── agent.py               # Job matching agent definition
+├── utils/                     # Utility modules
+│   ├── __init__.py
+│   ├── firestore.py           # Firestore database operations
+│   └── models.py              # Pydantic data models
+├── templates/                 # Jinja2 templates
+│   ├── base.html             # Base template
+│   ├── landing.html          # Landing page
+│   ├── register.html         # Registration page
+│   ├── login.html            # Login page
+│   ├── dashboard.html        # Main dashboard with chat
+│   └── components/           # Reusable components
+│       ├── chat_message.html # Chat message component
+│       └── chat_error.html   # Chat error component
+├── static/                   # Static assets
+│   └── css/
+│       └── styles.css        # Application styles
+├── config/                   # Configuration files
+│   ├── firebase-credentials.json      # Firebase service account (excluded from git)
+│   └── firebase-web-config.json       # Firebase web config
+├── .env                      # Environment variables (excluded from git)
+├── .env.example             # Environment template
+├── pyproject.toml           # UV project configuration
+└── README.md               # This file
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **ADK Dev UI not loading**: Make sure to use the trailing slash: `/adk/dev-ui/`
+2. **Firebase errors**: Check that both configuration files are properly placed in `config/`
+3. **Agent not found**: Verify the `job_matching_agent/` directory structure is correct
+4. **Chat not working**: Check the browser console for JavaScript errors and server logs
+
+### Debug Endpoints
+
+- `/debug/adk` - Shows agent configuration and status
+- `/health` - Application health check
+- `/adk/docs` - ADK API documentation
+
+### Logs to Check
+
+When troubleshooting, look for these log messages:
+- "ADK app created successfully"
+- "ADK app mounted under /adk"
+- "Firebase Admin SDK initialized successfully"
+- "Firestore service initialized successfully"

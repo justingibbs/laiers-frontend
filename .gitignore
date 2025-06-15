@@ -1,17 +1,9 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
-
 # Firebase
 firebase-credentials.json
 firebase-web-config.json
+
+# ADK specific (ADK's local session database)
+sessions.db
 
 # Environment variables
 .env
@@ -19,3 +11,26 @@ firebase-web-config.json
 
 # Scratch folder
 SCRATCH/
+
+# Python
+__pycache__/
+*.py[cod]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual Environment
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

@@ -82,16 +82,26 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Get ADK app and mount it under /adk path
 AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
-adk_app = get_fast_api_app(
-    agents_dir=AGENT_DIR,
-    session_db_url="sqlite:///./sessions.db",
-    allow_origins=["*"] if ENVIRONMENT == "development" else [],
-    web=True,  # This enables the dev UI at /adk/dev-ui
-    trace_to_cloud=False
-)
+logger.info(f"Looking for agents in directory: {AGENT_DIR}")
 
-# Mount ADK app under /adk prefix
-app.mount("/adk", adk_app)
+try:
+    adk_app = get_fast_api_app(
+        agents_dir=AGENT_DIR,
+        session_db_url="sqlite:///./sessions.db",
+        allow_origins=["*"] if ENVIRONMENT == "development" else [],
+        web=True,  # This enables the dev UI
+        trace_to_cloud=False
+    )
+    logger.info("ADK app created successfully")
+    logger.info(f"ADK app routes: {[route.path for route in adk_app.routes if hasattr(route, 'path')]}")
+    
+    # Mount ADK app under /adk prefix
+    app.mount("/adk", adk_app, name="adk")
+    logger.info("ADK app mounted under /adk")
+    
+except Exception as e:
+    logger.error(f"Failed to create/mount ADK app: {e}")
+    raise
 
 # Auth Helper Functions
 async def get_current_user(session_token: str = Cookie(None)) -> dict | None:
@@ -355,11 +365,25 @@ async def debug_adk():
         return {
             "agent_name": root_agent.name,
             "agent_model": root_agent.model,
-            "adk_dev_ui": "/adk/dev-ui",
-            "agent_endpoint": f"/adk/apps/{root_agent.name}/users/test/sessions/test"
+            "adk_dev_ui_url": "http://localhost:8000/adk/dev-ui/",
+            "agent_endpoint": f"/adk/apps/{root_agent.name}/users/test/sessions/test",
+            "status": "ADK mounted successfully under /adk"
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "note": "Make sure job_matching_agent directory exists with proper structure"}
+
+@app.get("/debug/routes")
+async def debug_routes():
+    """Debug endpoint to see all available routes"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            routes.append({
+                "path": route.path,
+                "methods": getattr(route, 'methods', None),
+                "name": getattr(route, 'name', None)
+            })
+    return {"routes": routes}
 
 if __name__ == "__main__":
     import uvicorn
