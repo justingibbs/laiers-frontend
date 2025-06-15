@@ -1,157 +1,111 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Job Matching App</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f5;
-        }
-        .dashboard-header {
-            background-color: #fff;
-            padding: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-        .user-type {
-            background-color: #e3f2fd;
-            padding: 0.25rem 0.75rem;
-            border-radius: 1rem;
-            font-size: 0.875rem;
-            color: #1976d2;
-        }
-        .sign-out {
-            background-color: #f44336;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.25rem;
-            cursor: pointer;
-            text-decoration: none;
-        }
-        .content {
-            max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-        }
-        .profile-card {
-            background-color: white;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-        .profile-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-        }
-        .profile-title {
-            margin: 0;
-            color: #333;
-        }
-        .profile-section {
-            margin-bottom: 1.5rem;
-        }
-        .profile-section h3 {
-            color: #666;
-            margin-bottom: 0.5rem;
-        }
-        .profile-field {
-            display: flex;
-            margin-bottom: 0.5rem;
-        }
-        .field-label {
-            width: 150px;
-            color: #666;
-        }
-        .field-value {
-            flex: 1;
-            color: #333;
-        }
-    </style>
-</head>
-<body>
-    <div class="dashboard-header">
-        <div class="user-info">
-            <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
-            <span class="user-type">{{ user_profile.user_type | title }}</span>
-        </div>
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Job Matching App{% endblock %}
+
+{% block header %}
+<div class="dashboard-header">
+    <h1>AI Job Assistant</h1>
+    <div class="user-info">
+        <span>Welcome, {{ user.email }}</span>
+        <span class="user-type">{{ user_profile.user_type | title }}</span>
         <a href="/api/logout" class="sign-out">Sign Out</a>
     </div>
+</div>
+{% endblock %}
 
-    <div class="content">
-        <div class="profile-card">
-            <div class="profile-header">
-                <h2 class="profile-title">Profile Information</h2>
-            </div>
-
-            <div class="profile-section">
-                <h3>Basic Information</h3>
-                <div class="profile-field">
-                    <span class="field-label">Email:</span>
-                    <span class="field-value">{{ user_profile.email }}</span>
-                </div>
-                <div class="profile-field">
-                    <span class="field-label">User Type:</span>
-                    <span class="field-value">{{ user_profile.user_type | title }}</span>
-                </div>
-                {% if user_profile.profile.name %}
-                <div class="profile-field">
-                    <span class="field-label">Name:</span>
-                    <span class="field-value">{{ user_profile.profile.name }}</span>
-                </div>
-                {% endif %}
-            </div>
-
-            {% if user_profile.user_type == 'talent' %}
-            <div class="profile-section">
-                <h3>Professional Information</h3>
-                {% if user_profile.profile.skills %}
-                <div class="profile-field">
-                    <span class="field-label">Skills:</span>
-                    <span class="field-value">{{ user_profile.profile.skills | join(', ') }}</span>
-                </div>
-                {% endif %}
-                {% if user_profile.profile.experience_level %}
-                <div class="profile-field">
-                    <span class="field-label">Experience Level:</span>
-                    <span class="field-value">{{ user_profile.profile.experience_level }}</span>
-                </div>
-                {% endif %}
-            </div>
-            {% endif %}
-
-            {% if user_profile.user_type == 'company' %}
-            <div class="profile-section">
-                <h3>Company Information</h3>
-                {% if user_profile.profile.company %}
-                <div class="profile-field">
-                    <span class="field-label">Company Name:</span>
-                    <span class="field-value">{{ user_profile.profile.company }}</span>
-                </div>
-                {% endif %}
-                {% if user_profile.profile.industry %}
-                <div class="profile-field">
-                    <span class="field-label">Industry:</span>
-                    <span class="field-value">{{ user_profile.profile.industry }}</span>
-                </div>
-                {% endif %}
-            </div>
-            {% endif %}
-        </div>
+{% block content %}
+<div class="dashboard-container">
+    <div id="chat-messages" class="chat-container">
+        <!-- Chat messages will be loaded here -->
     </div>
-</body>
-</html> 
+    
+    <form 
+        hx-post="/api/chat" 
+        hx-target="#chat-messages" 
+        hx-swap="beforeend"
+        hx-trigger="submit"
+        class="chat-form"
+    >
+        <input 
+            type="text" 
+            name="message" 
+            placeholder="Ask me anything about jobs..." 
+            required 
+            autocomplete="off"
+        >
+        <button type="submit">Send</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dashboard-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .chat-container {
+        height: 500px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .message-pair {
+        margin-bottom: 20px;
+    }
+
+    .user-message, .assistant-message {
+        max-width: 80%;
+        padding: 10px 15px;
+        border-radius: 15px;
+        margin-bottom: 5px;
+    }
+
+    .user-message {
+        background-color: #007bff;
+        color: white;
+        margin-left: auto;
+    }
+
+    .assistant-message {
+        background-color: #f1f1f1;
+        margin-right: auto;
+    }
+
+    .message-timestamp {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 5px;
+    }
+
+    .chat-form {
+        display: flex;
+        gap: 10px;
+    }
+
+    .chat-form input {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+
+    .chat-form button {
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .chat-form button:hover {
+        background-color: #0056b3;
+    }
+</style>
+{% endblock %} 

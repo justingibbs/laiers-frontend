@@ -1,0 +1,27 @@
+<div class="error-message">
+    <div class="error-content">
+        {{ error }}
+    </div>
+    <div class="error-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+</div>
+
+<style>
+    .error-message {
+        background-color: #fff3f3;
+        border: 1px solid #ffcdd2;
+        border-radius: 15px;
+        padding: 10px 15px;
+        margin: 10px 0;
+        color: #d32f2f;
+    }
+
+    .error-content {
+        font-size: 0.9em;
+    }
+
+    .error-timestamp {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 5px;
+    }
+</style> 

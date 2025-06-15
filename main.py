@@ -11,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 import firebase_admin
 from firebase_admin import credentials, auth
 from utils.firestore import FirestoreService
+from google.adk.agents.llm_agent import Agent
+from google.adk.runners import Runner
+from utils.agent import runner
 
 # Load environment variables
 load_dotenv()
@@ -80,7 +83,7 @@ except Exception as e:
     raise
 
 # Initialize FastAPI
-app = FastAPI(title="Job Matching App")
+app = FastAPI()
 
 # Initialize templates
 templates = Jinja2Templates(directory="templates")
@@ -255,6 +258,54 @@ async def logout(request: Request):
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie("session")
     return response
+
+@app.post("/api/chat")
+async def chat_endpoint(
+    request: Request,
+    message: str = Form(...),
+    user = Depends(require_auth)
+):
+    """Handle chat messages using ADK agent"""
+    try:
+        # Get user profile for context
+        user_profile = await firestore_service.get_user_profile(user['uid'])
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        # Run message through ADK agent
+        response = await runner.run(
+            message,
+            user_context={
+                "user_type": user_profile.user_type,
+                "email": user_profile.email,
+                "profile": user_profile.profile.dict() if user_profile.profile else {}
+            }
+        )
+        
+        # Save chat message to Firestore
+        chat_message = {
+            "user_id": user['uid'],
+            "message": message,
+            "response": response,
+            "timestamp": datetime.now(),
+            "session_id": request.session.get('session_id', 'default')
+        }
+        await firestore_service.save_chat_message(chat_message)
+        
+        # Return chat message component
+        return templates.TemplateResponse("components/messages.html", {
+            "request": request,
+            "message": message,
+            "response": response,
+            "timestamp": datetime.now()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing chat message: {str(e)}")
+        return templates.TemplateResponse("components/error.html", {
+            "request": request,
+            "error": "Failed to process message"
+        })
 
 if __name__ == "__main__":
     import uvicorn
