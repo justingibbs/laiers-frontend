@@ -8,6 +8,7 @@ dependencies = [
     "fastapi",
     "jinja2",
     "python-multipart",
+    "httpx",
     "google-adk",
     "google-cloud-firestore", 
     "firebase-admin",

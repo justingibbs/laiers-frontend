@@ -4,13 +4,12 @@ import logging
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
+import httpx
 from fastapi import FastAPI, Request, Form, HTTPException, Cookie, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from google.adk.cli.fast_api import get_fast_api_app
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
 import firebase_admin
 from firebase_admin import credentials, auth
 from utils.firestore import FirestoreService
@@ -282,41 +281,97 @@ async def chat_with_agent(
         if not user_profile:
             raise HTTPException(status_code=400, detail="User profile not found")
         
-        # Import the agent from the job_matching_agent module
+        # Get agent name from the mounted ADK app
         from job_matching_agent.agent import root_agent
+        agent_name = root_agent.name
         
-        # Create a runner for this chat session
-        session_service = InMemorySessionService()
-        runner = Runner(
-            app_name="job-matching-chat",
-            agent=root_agent,
-            session_service=session_service
-        )
-        
-        # Create user context for the agent
-        user_context = {
-            "user_type": user_profile.get("user_type", "talent"),
-            "email": user.get("email", ""),
-            "user_id": user["uid"]
-        }
-        
-        # Run the agent with user context
+        # Prepare session and user IDs
         session_id = f"session_{user['uid']}"
-        response = await runner.run_async(
-            user_id=user["uid"],
-            session_id=session_id,
-            message=message,
-            context=user_context
-        )
+        user_id = user["uid"]
         
-        # Extract the response text
-        response_text = response.get("response", "I'm sorry, I couldn't process that request.")
+        # Add context about user type to the message
+        user_type = user_profile.get("user_type", "talent")
+        contextual_message = f"[User type: {user_type}] {message}"
+        
+        # First, create or ensure session exists (call ADK endpoint directly)
+        async with httpx.AsyncClient() as client:
+            # Create session first - this is required before sending messages
+            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            try:
+                session_response = await client.post(session_url, 
+                    json={"state": {}}
+                )
+                logger.debug(f"Session creation response: {session_response.status_code}")
+                
+                # If session creation fails (and it's not because it already exists), handle the error
+                if session_response.status_code not in [200, 400]:  # 400 might mean session already exists
+                    logger.error(f"Session creation failed: {session_response.text}")
+                    
+            except Exception as e:
+                logger.debug(f"Session creation note: {e}")
+                # Continue - session might already exist
+            
+            # Send message to agent via ADK's /run endpoint
+            run_url = "http://localhost:8000/adk/run"
+            run_payload = {
+                "appName": agent_name,        # camelCase, not snake_case
+                "userId": user_id,            # camelCase, not snake_case  
+                "sessionId": session_id,      # camelCase, not snake_case
+                "newMessage": {               # camelCase, not snake_case
+                    "role": "user",
+                    "parts": [{"text": contextual_message}]
+                },
+                "streaming": False            # Add required streaming field
+            }
+            
+            logger.debug(f"Sending payload to {run_url}: {run_payload}")
+            
+            run_response = await client.post(run_url, json=run_payload)
+            
+            # Log the error details if request fails
+            if run_response.status_code != 200:
+                error_details = run_response.text
+                logger.error(f"ADK run endpoint error {run_response.status_code}: {error_details}")
+                # Try to get more details from the response
+                try:
+                    error_json = run_response.json()
+                    logger.error(f"Error JSON: {error_json}")
+                except:
+                    pass
+                raise httpx.HTTPStatusError(f"ADK endpoint error: {error_details}", request=run_response.request, response=run_response)
+            
+            # Parse the response events
+            events = run_response.json()
+            logger.debug(f"ADK response events: {events}")
+            
+            final_response = "I'm sorry, I couldn't process that request."
+            
+            # Look for the final response in the events
+            if isinstance(events, list):
+                for event in events:
+                    logger.debug(f"Processing event: {event}")
+                    if event.get("turnComplete") and event.get("content"):
+                        content = event["content"]
+                        if content.get("parts"):
+                            for part in content["parts"]:
+                                if part.get("text"):
+                                    final_response = part["text"]
+                                    break
+                            if final_response != "I'm sorry, I couldn't process that request.":
+                                break
+                    # Also check for other possible response formats
+                    elif event.get("content") and event.get("content", {}).get("parts"):
+                        content = event["content"]
+                        for part in content["parts"]:
+                            if part.get("text"):
+                                final_response = part["text"]
+                                break
         
         # Return HTMX partial template
         return templates.TemplateResponse("components/chat_message.html", {
             "request": request,
             "user_message": message,
-            "agent_response": response_text,
+            "agent_response": final_response,
             "timestamp": datetime.now()
         })
         
@@ -384,6 +439,106 @@ async def debug_routes():
                 "name": getattr(route, 'name', None)
             })
     return {"routes": routes}
+
+@app.get("/debug/adk-docs")
+async def debug_adk_docs():
+    """Check ADK's API documentation"""
+    try:
+        async with httpx.AsyncClient() as client:
+            # Check what endpoints ADK provides
+            docs_response = await client.get("http://localhost:8000/adk/docs")
+            openapi_response = await client.get("http://localhost:8000/adk/openapi.json")
+            
+            return {
+                "docs_status": docs_response.status_code,
+                "openapi_status": openapi_response.status_code,
+                "openapi_content": openapi_response.json() if openapi_response.status_code == 200 else None
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+# Test agent discovery
+@app.get("/test/agent-discovery")
+async def test_agent_discovery():
+    """Test if ADK can discover and list our agent"""
+    try:
+        async with httpx.AsyncClient() as client:
+            # Check if ADK can list our agent
+            list_apps_url = "http://localhost:8000/adk/list-apps"
+            response = await client.get(list_apps_url)
+            
+            return {
+                "list_apps_status": response.status_code,
+                "available_apps": response.json() if response.status_code == 200 else None,
+                "response_text": response.text,
+                "job_matching_agent_found": "job_matching_agent" in (response.json() if response.status_code == 200 else [])
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+# Test complete ADK flow
+@app.get("/test/adk-complete-flow")
+async def test_adk_complete_flow():
+    """Test the complete ADK flow: create session -> send message"""
+    try:
+        # Mock data for testing
+        agent_name = "job_matching_agent"
+        user_id = "test_user_123"
+        session_id = "test_session_123"
+        message = "Hello, test message"
+        
+        async with httpx.AsyncClient() as client:
+            # Step 1: Create session first
+            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_payload = {"state": {}}
+            
+            logger.info(f"Creating session at: {session_url}")
+            session_response = await client.post(session_url, json=session_payload)
+            
+            session_result = {
+                "status_code": session_response.status_code,
+                "text": session_response.text
+            }
+            
+            # 400 means session already exists, which is fine - continue with message sending
+            if session_response.status_code not in [200, 400]:
+                return {
+                    "step": "session_creation_failed",
+                    "session_result": session_result
+                }
+            
+            # Step 2: Send message to the session
+            run_url = "http://localhost:8000/adk/run"
+            run_payload = {
+                "appName": agent_name,
+                "userId": user_id,
+                "sessionId": session_id,
+                "newMessage": {
+                    "role": "user",
+                    "parts": [{"text": message}]
+                },
+                "streaming": False
+            }
+            
+            logger.info(f"Sending message to: {run_url}")
+            run_response = await client.post(run_url, json=run_payload)
+            
+            return {
+                "session_creation": session_result,
+                "message_send": {
+                    "status_code": run_response.status_code,
+                    "payload_sent": run_payload,
+                    "response_text": run_response.text,
+                    "success": run_response.status_code == 200
+                },
+                "overall_success": (session_response.status_code in [200, 400]) and run_response.status_code == 200
+            }
+            
+    except Exception as e:
+        return {
+            "error": str(e),
+            "step": "exception_occurred"
+        }
 
 if __name__ == "__main__":
     import uvicorn
