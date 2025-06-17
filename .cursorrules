@@ -83,10 +83,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
 adk_app = get_fast_api_app(
     agents_dir=AGENT_DIR,
-    session_db_url="sqlite:///./sessions.db",
     allow_origins=["*"] if ENVIRONMENT == "development" else [],
     web=True,  # Enables dev UI at /adk/dev-ui/
-    trace_to_cloud=False
 )
 
 # Mount ADK app under /adk prefix
@@ -117,23 +115,24 @@ async def chat_with_agent(
     user = Depends(require_auth)
 ):
     """Chat with ADK agent via HTMX"""
-    # Import agent and create runner
-    from job_matching_agent.agent import root_agent
-    runner = Runner(agent=root_agent, session_service=InMemorySessionService())
+    # Use ADK's HTTP API internally
+    payload = {
+        "appName": "job_matching_agent",
+        "userId": user["uid"],
+        "sessionId": f"session_{user['uid']}",
+        "newMessage": {"role": "user", "parts": [{"text": message}]},
+        "streaming": False
+    }
     
-    # Run agent with user context
-    response = await runner.run_async(
-        user_id=user["uid"],
-        session_id=f"session_{user['uid']}",
-        message=message,
-        context={"user_type": user_profile.get("user_type")}
-    )
+    async with httpx.AsyncClient() as client:
+        response = await client.post("http://localhost:8000/adk/run", json=payload)
+        agent_response = response.json()
     
     # Return HTMX partial
     return templates.TemplateResponse("components/chat_message.html", {
         "request": request,
         "user_message": message,
-        "agent_response": response.get("response"),
+        "agent_response": agent_response[0]["content"]["parts"][0]["text"],
         "timestamp": datetime.now()
     })
 ```
@@ -321,44 +320,76 @@ class FirestoreService:
             return None
 ```
 
-## Environment Configuration
+## Environment Configuration - CRITICAL SETUP
 ```python
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Required environment variables
+# Required environment variables for ADK
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-VERTEX_AI_LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")  # REQUIRED
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")  # REQUIRED
+GOOGLE_GENAI_USE_VERTEXAI = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "true")  # REQUIRED
+
+# Firebase
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "config/firebase-credentials.json")
+
+# ADK Configuration (optional)
 ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
-GOOGLE_GENAI_USE_VERTEXAI = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
 
 # Validation
-required_vars = ["GOOGLE_CLOUD_PROJECT", "ADK_BUCKET_NAME"]
+required_vars = ["GOOGLE_CLOUD_PROJECT"]
 for var_name in required_vars:
     if not os.getenv(var_name):
         raise ValueError(f"Required environment variable {var_name} is not set")
 ```
 
-### .env.example Template
+### .env.example Template - UPDATED WITH CORRECT VARIABLES
 ```bash
 # Environment
 ENVIRONMENT=development
 
-# Google Cloud
+# Google Cloud - REQUIRED for ADK/Vertex AI
 GOOGLE_CLOUD_PROJECT=your-project-id
-VERTEX_AI_LOCATION=us-central1
+GOOGLE_CLOUD_LOCATION=us-central1
 GOOGLE_GENAI_USE_VERTEXAI=true
 
 # Firebase
 FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
 
-# ADK Configuration
+# ADK Configuration (optional)
 ADK_BUCKET_NAME=your-bucket-name
 ```
+
+## Google Cloud Setup - CRITICAL STEPS
+
+### 1. Enable Required APIs
+Before running the application, you MUST enable these APIs in Google Cloud Console:
+```bash
+# Visit these URLs to enable APIs:
+# https://console.developers.google.com/apis/api/aiplatform.googleapis.com/overview?project=YOUR_PROJECT_ID
+# https://console.developers.google.com/apis/api/vertexai.googleapis.com/overview?project=YOUR_PROJECT_ID
+```
+
+### 2. Authentication Setup
+```bash
+# Install Google Cloud SDK
+brew install google-cloud-sdk  # macOS
+# or follow instructions for other platforms
+
+# Authenticate
+gcloud auth login
+gcloud auth application-default login
+gcloud config set project YOUR_PROJECT_ID
+```
+
+### 3. Project Configuration
+Ensure your Google Cloud project has:
+- ✅ Vertex AI API enabled
+- ✅ Application Default Credentials configured
+- ✅ Project ID set in environment variables
 
 ## Development Dependencies (pyproject.toml)
 ```toml
@@ -374,7 +405,8 @@ dependencies = [
     "firebase-admin",
     "pydantic[email]",
     "python-dotenv",
-    "uvicorn[standard]"
+    "uvicorn[standard]",
+    "httpx"                 # For internal ADK API calls
 ]
 
 [tool.uv]
@@ -393,10 +425,10 @@ dev-dependencies = [
 - **Login**: `http://localhost:8000/login`
 - **Dashboard**: `http://localhost:8000/dashboard` (requires auth)
 
-### ADK Integration URLs
+### ADK Integration URLs - VERIFIED WORKING
 - **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` (note trailing slash!)
 - **ADK API Docs**: `http://localhost:8000/adk/docs`
-- **Agent Endpoint**: `/adk/apps/job_matching_agent/users/{user_id}/sessions/{session_id}`
+- **Agent Test**: `http://localhost:8000/test/adk-complete-flow` (custom test endpoint)
 
 ### Debug URLs
 - **Debug Agent**: `http://localhost:8000/debug/adk`
@@ -412,8 +444,9 @@ dev-dependencies = [
 - **Context Passing**: Always pass user context to ADK agent (user_type, etc.)
 - **Error Handling**: Use try/except blocks with proper logging
 - **HTMX Patterns**: Form-based chat interface, partial template responses
-- **Environment Config**: Load all config from environment variables
-- **Logging**: Use structured logging with appropriate levels
+- **Environment Config**: Load all config from environment variables with proper validation
+- **Google Cloud Setup**: Always verify Vertex AI API is enabled before deployment
+- **ADK Communication**: Use HTTP client to call ADK endpoints internally, not direct imports
 
 ### Template Patterns:
 - **Dashboard**: Two-panel grid layout (profile left, chat right)
@@ -422,12 +455,14 @@ dev-dependencies = [
 - **Mobile Responsive**: Grid collapses to single column on mobile
 - **User Context**: Show different chat welcome based on user_type
 
-### ADK-Specific Rules:
+### ADK-Specific Rules - UPDATED BASED ON TESTING:
 - **Agent Discovery**: ADK looks for `root_agent` variable in agent directory
 - **Mounting**: Mount ADK app under path, don't replace main FastAPI app
 - **Dev UI**: Always accessible at `/adk/dev-ui/` (with trailing slash)
-- **Agent Communication**: Use ADK's Runner class with user context
-- **File Handling**: Use ADK Artifacts, not custom file upload
+- **Agent Communication**: Use HTTP calls to `/adk/run` endpoint, not direct Runner imports
+- **Environment Variables**: Must have `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`
+- **API Dependencies**: Vertex AI API must be enabled in Google Cloud Console
+- **Authentication**: Use Application Default Credentials (gcloud auth application-default login)
 
 ### What to NEVER suggest:
 - **Replacing ADK patterns**: Don't suggest alternatives to ADK's agent structure
@@ -436,13 +471,34 @@ dev-dependencies = [
 - **Database alternatives**: Firestore only, no SQLite/PostgreSQL
 - **Microservices**: Single application with mounted sub-apps only
 - **Different agent frameworks**: ADK only, no LangChain/CrewAI alternatives
+- **Direct ADK imports**: Use HTTP API calls, not direct Python imports of ADK classes
 
-### Error Handling Pattern:
+### Error Handling Pattern - UPDATED:
 ```python
 try:
-    # ADK agent interaction
-    response = await runner.run_async(user_id, session_id, message, context)
-    return templates.TemplateResponse("components/chat_message.html", context)
+    # ADK agent interaction via HTTP
+    payload = {
+        "appName": "job_matching_agent",
+        "userId": user["uid"],
+        "sessionId": f"session_{user['uid']}",
+        "newMessage": {"role": "user", "parts": [{"text": message}]},
+        "streaming": False
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post("http://localhost:8000/adk/run", json=payload)
+        if response.status_code == 200:
+            agent_data = response.json()
+            agent_response = agent_data[0]["content"]["parts"][0]["text"]
+        else:
+            raise Exception(f"ADK API error: {response.status_code}")
+    
+    return templates.TemplateResponse("components/chat_message.html", {
+        "request": request,
+        "user_message": message,
+        "agent_response": agent_response,
+        "timestamp": datetime.now()
+    })
 except Exception as e:
     logger.error(f"Chat error: {e}")
     return templates.TemplateResponse("components/chat_error.html", {
@@ -459,12 +515,32 @@ except Exception as e:
 - **Template-First**: Design templates before implementing routes
 - **Responsive Design**: Mobile-friendly two-panel layout
 
-## Common Mistakes to Avoid
+## Common Mistakes to Avoid - UPDATED
 - **Wrong ADK mounting**: Don't use ADK app as main app, mount under `/adk`
 - **Missing trailing slash**: ADK dev UI needs `/adk/dev-ui/` not `/adk/dev-ui`
 - **Agent structure**: Must have `job_matching_agent/` directory with `root_agent`
 - **Template context**: Always pass `request` object to template responses
 - **User context**: Don't forget to pass user_type to agent for personalization
 - **HTMX targets**: Use correct selectors for message container updates
+- **Environment variables**: Use `GOOGLE_CLOUD_LOCATION` not `VERTEX_AI_LOCATION`
+- **API not enabled**: Always check Vertex AI API is enabled in Google Cloud Console
+- **Authentication**: Must run `gcloud auth application-default login`
+- **Direct imports**: Don't import ADK classes directly, use HTTP API
 
-When writing code, always reference these ADK integration patterns. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer.
+## Troubleshooting - CRITICAL ISSUES
+
+### ADK Agent Not Working (500 Error)
+1. **Check Vertex AI API**: Visit `https://console.developers.google.com/apis/api/aiplatform.googleapis.com/overview?project=YOUR_PROJECT_ID`
+2. **Verify Authentication**: Run `gcloud auth application-default login`
+3. **Check Environment**: Ensure `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are set
+4. **Test Connection**: Use `/test/adk-complete-flow` endpoint to verify setup
+
+### Session Already Exists (400 Error)
+This is NORMAL behavior. ADK reuses existing sessions. Only worry if message sending fails.
+
+### 403 Permission Denied
+- Enable Vertex AI API in Google Cloud Console
+- Wait 2-3 minutes after enabling
+- Verify project ID matches in environment variables
+
+When writing code, always reference these ADK integration patterns. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer. **Always verify Google Cloud setup before troubleshooting code issues.**
