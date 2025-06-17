@@ -1,155 +1,470 @@
 # Job Matching App - Cursor AI Rules
 
 ## Project Context
-Building a job matching MVP where Job Seekers and Recruiters chat with AI agents. Single-file FastAPI prototype with FastHTML frontend.
+Building a job matching MVP where Talent and Companies chat with AI agents. FastAPI application with custom authentication and UI, powered by Google ADK for agent functionality.
 
 ## Required Tech Stack (DO NOT SUGGEST ALTERNATIVES)
 - Python with UV dependency management
-- FastAPI backend with FastHTML frontend
-- Google ADK for agent orchestration
-- Vertex AI (Gemini) for LLM backend
+- FastAPI backend with Jinja2 templates
+- HTMX for dynamic frontend interactions
+- Google ADK for agent orchestration and LLM backend
+- Vertex AI (Gemini) via ADK
 - Firebase Authentication
 - Firestore for all data storage
 - Cloud Run for deployment
 - Google Cloud Storage via ADK Artifacts for files
 
 ## Architecture Constraints
-- Single FastAPI service in main.py
+- Main FastAPI app with ADK mounted as sub-application
 - No microservices, no complex session management
 - Use Firestore for everything (no SQLite, no other databases)
 - ADK Artifacts for file handling (no custom upload logic)
 - Environment-based configuration only
+- Jinja2 templates for HTML rendering
+- HTMX for dynamic interactions (no complex JavaScript)
+
+## Project Structure
+```
+laiers/
+├── main.py                 # Main FastAPI app with ADK integration
+├── job_matching_agent/     # ADK agent directory (REQUIRED structure)
+│   ├── __init__.py        # Must contain: from . import agent
+│   └── agent.py           # Must contain: root_agent = Agent(...)
+├── pyproject.toml         # UV project configuration & dependencies
+├── uv.lock               # UV lockfile (auto-generated)
+├── .env                   # Environment variables (local dev)
+├── .env.example          # Template for environment variables
+├── .gitignore            # Git ignore file
+├── README.md             # Project documentation
+├── templates/            # Jinja2 template files
+│   ├── base.html         # Base template with common elements
+│   ├── landing.html      # Landing page
+│   ├── login.html        # Login page
+│   ├── register.html     # Registration page
+│   ├── dashboard.html    # Main dashboard with profile + chat
+│   └── components/       # Reusable template components
+│       ├── chat_message.html  # Chat message component
+│       └── chat_error.html    # Chat error component
+├── static/               # Static assets
+│   ├── css/
+│   │   └── styles.css    # Main stylesheet
+│   └── images/           # Static images
+├── config/
+│   ├── firebase-credentials.json     # Firebase service account key
+│   └── firebase-web-config.json      # Firebase web app config
+├── utils/                # Utility modules (keep minimal)
+│   ├── __init__.py
+│   ├── firestore.py      # Firestore helpers
+│   └── models.py         # Pydantic models
+└── deployment/
+    ├── Dockerfile        # For Cloud Run (uses UV)
+    └── cloudbuild.yaml   # Cloud Build configuration
+```
 
 ## Code Patterns to Follow
 
-### FastAPI Structure
+### ADK + FastAPI Integration Pattern
 ```python
-from fastapi import FastAPI, Depends
-from google_adk import get_fast_api_app
+import os
+from fastapi import FastAPI, Request, Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, RedirectResponse
+from google.adk.cli.fast_api import get_fast_api_app
 
-app = get_fast_api_app()
+# Create main FastAPI app for custom routes
+app = FastAPI(title="Job Matching App")
 
-# Required routes only:
-@app.get("/")                    # Landing page
-@app.get("/login")               # Auth page  
-@app.get("/dashboard")           # Chat interface (auth required)
-@app.post("/api/chat")           # Agent communication (auth required)
-@app.get("/health")              # Health check
+# Initialize templates and static files
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Get ADK app and mount it under /adk path
+AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
+adk_app = get_fast_api_app(
+    agents_dir=AGENT_DIR,
+    session_db_url="sqlite:///./sessions.db",
+    allow_origins=["*"] if ENVIRONMENT == "development" else [],
+    web=True,  # Enables dev UI at /adk/dev-ui/
+    trace_to_cloud=False
+)
+
+# Mount ADK app under /adk prefix
+app.mount("/adk", adk_app)
+
+# Your custom routes
+@app.get("/", response_class=HTMLResponse)
+async def landing_page(request: Request, user = Depends(optional_auth)):
+    """Landing page - redirect to dashboard if logged in"""
+    if user:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    return templates.TemplateResponse("landing.html", {"request": request})
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, user = Depends(require_auth)):
+    """Dashboard with profile + chat interface"""
+    user_profile = await firestore_service.get_user_profile(user['uid'])
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": user,
+        "user_profile": user_profile
+    })
+
+@app.post("/api/chat")
+async def chat_with_agent(
+    request: Request,
+    message: str = Form(...),
+    user = Depends(require_auth)
+):
+    """Chat with ADK agent via HTMX"""
+    # Import agent and create runner
+    from job_matching_agent.agent import root_agent
+    runner = Runner(agent=root_agent, session_service=InMemorySessionService())
+    
+    # Run agent with user context
+    response = await runner.run_async(
+        user_id=user["uid"],
+        session_id=f"session_{user['uid']}",
+        message=message,
+        context={"user_type": user_profile.get("user_type")}
+    )
+    
+    # Return HTMX partial
+    return templates.TemplateResponse("components/chat_message.html", {
+        "request": request,
+        "user_message": message,
+        "agent_response": response.get("response"),
+        "timestamp": datetime.now()
+    })
 ```
 
-### User Data Models (Always Pydantic)
+### ADK Agent Structure (REQUIRED)
 ```python
-from pydantic import BaseModel
-from typing import Literal
+# job_matching_agent/__init__.py
+from . import agent
 
-class User(BaseModel):
-    uid: str
-    email: str
-    user_type: Literal["job_seeker", "recruiter"]
-    created_at: datetime
-    profile: UserProfile
+# job_matching_agent/agent.py
+from google.adk.agents import Agent
+
+# This MUST be named 'root_agent' for ADK discovery
+root_agent = Agent(
+    name="job_matching_agent",
+    model="gemini-2.0-flash-exp",
+    instruction="""You are a job matching assistant.
+    
+    Context: You will receive user information including their user_type ('talent' or 'company').
+    
+    For 'talent' users:
+    - Help with resume review, job search, interview prep, career advice
+    
+    For 'company' users:  
+    - Help with job postings, candidate screening, hiring strategies
+    
+    Always adapt your responses based on the user_type in the context."""
+)
+```
+
+### Dashboard Template Pattern (Two-Panel Layout)
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Job Matching App</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        /* Two-column layout */
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            max-width: 1200px;
+            margin: 2rem auto;
+        }
+        
+        @media (max-width: 768px) {
+            .content { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-header">
+        <div class="user-info">
+            <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
+            <span class="user-type">{{ user_profile.user_type | title }}</span>
+        </div>
+        <button 
+            class="sign-out"
+            hx-post="/api/logout"
+            hx-confirm="Are you sure you want to sign out?"
+        >Sign Out</button>
+    </div>
+
+    <div class="content">
+        <!-- Profile Panel -->
+        <div class="profile-card">
+            <h2>Profile Information</h2>
+            <!-- Profile data display -->
+        </div>
+
+        <!-- Chat Panel -->
+        <div class="chat-card">
+            <h2>🤖 AI Job Assistant</h2>
+            
+            <div id="chat-messages" class="chat-messages">
+                <div class="welcome-message">
+                    {% if user_profile.user_type == 'talent' %}
+                        I'm here to help with job searching, resumes, and career advice.
+                    {% else %}
+                        I'm here to help with job postings and hiring strategies.
+                    {% endif %}
+                </div>
+            </div>
+            
+            <form 
+                class="chat-form"
+                hx-post="/api/chat" 
+                hx-target="#chat-messages" 
+                hx-swap="beforeend"
+                hx-trigger="submit"
+            >
+                <input 
+                    type="text" 
+                    name="message" 
+                    placeholder="Ask me anything about jobs and careers..." 
+                    required 
+                    autocomplete="off"
+                >
+                <button type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+```
+
+### Chat Message Component Pattern
+```html
+<!-- templates/components/chat_message.html -->
+<div class="message-pair">
+    <!-- User message -->
+    <div class="user-message">
+        <div class="message-content">{{ user_message }}</div>
+        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    </div>
+    
+    <!-- Agent response -->
+    <div class="agent-message">
+        <div class="message-avatar">🤖</div>
+        <div class="message-content">{{ agent_response }}</div>
+        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    </div>
+</div>
 ```
 
 ### Firebase Auth Pattern
 ```python
-from fastapi import Depends, HTTPException
+# utils/auth.py (simplified from original .cursorrules)
+from fastapi import Depends, HTTPException, Cookie
 from firebase_admin import auth
 
-async def get_current_user(token: str = Depends(get_token)):
+async def get_current_user(session_token: str = Cookie(None)):
+    if not session_token:
+        return None
     try:
-        decoded_token = auth.verify_id_token(token)
+        decoded_token = auth.verify_session_cookie(session_token, check_revoked=True)
         return decoded_token
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return None
+
+async def require_auth(session_token: str = Cookie(None)):
+    user = await get_current_user(session_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+async def optional_auth(session_token: str = Cookie(None)):
+    return await get_current_user(session_token)
 ```
 
-### ADK Agent Configuration
+### Firestore Helper Pattern
 ```python
-from google.adk.agents import Agent
-from google.adk.runners import Runner
-from google.adk.artifacts import GcsArtifactService
+# utils/firestore.py
+from google.cloud import firestore
+import os
 
-agent = Agent(
-    name="job_matching_agent",
-    model="gemini-2.0-flash",
-    instruction="Job matching assistant that adapts to user type"
-)
-
-artifact_service = GcsArtifactService(bucket_name="job-files")
-runner = Runner(agent=agent, artifact_service=artifact_service)
+class FirestoreService:
+    def __init__(self):
+        self.db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
+    
+    async def create_user_profile(self, uid: str, email: str, user_type: str) -> bool:
+        try:
+            doc_ref = self.db.collection("users").document(uid)
+            doc_ref.set({
+                "email": email,
+                "user_type": user_type,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "profile": {}
+            })
+            return True
+        except Exception as e:
+            logger.error(f"Error creating user profile: {e}")
+            return False
+    
+    async def get_user_profile(self, uid: str) -> dict | None:
+        try:
+            doc = self.db.collection("users").document(uid).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error getting user profile: {e}")
+            return None
 ```
 
-### File Handling (Always ADK Artifacts)
+## Environment Configuration
 ```python
-from google.adk.tools.tool_context import ToolContext
+import os
+from dotenv import load_dotenv
 
-def handle_resume(tool_context: ToolContext, filename: str):
-    # User-scoped artifacts persist across sessions
-    artifact = tool_context.load_artifact(f"user:{filename}")
-    if artifact and artifact.inline_data:
-        return process_file(artifact.inline_data.data)
+load_dotenv()
+
+# Required environment variables
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+VERTEX_AI_LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "config/firebase-credentials.json")
+ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
+GOOGLE_GENAI_USE_VERTEXAI = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+
+# Validation
+required_vars = ["GOOGLE_CLOUD_PROJECT", "ADK_BUCKET_NAME"]
+for var_name in required_vars:
+    if not os.getenv(var_name):
+        raise ValueError(f"Required environment variable {var_name} is not set")
 ```
+
+### .env.example Template
+```bash
+# Environment
+ENVIRONMENT=development
+
+# Google Cloud
+GOOGLE_CLOUD_PROJECT=your-project-id
+VERTEX_AI_LOCATION=us-central1
+GOOGLE_GENAI_USE_VERTEXAI=true
+
+# Firebase
+FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
+
+# ADK Configuration
+ADK_BUCKET_NAME=your-bucket-name
+```
+
+## Development Dependencies (pyproject.toml)
+```toml
+[project]
+name = "laiers"
+version = "0.1.0"
+dependencies = [
+    "google-adk",           # Primary dependency - provides FastAPI integration
+    "fastapi",
+    "jinja2", 
+    "python-multipart",
+    "google-cloud-firestore", 
+    "firebase-admin",
+    "pydantic[email]",
+    "python-dotenv",
+    "uvicorn[standard]"
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "black", 
+    "ruff"
+]
+```
+
+## Development URLs and Endpoints
+
+### Main Application URLs
+- **Landing Page**: `http://localhost:8000/`
+- **Registration**: `http://localhost:8000/register?user_type=talent|company`
+- **Login**: `http://localhost:8000/login`
+- **Dashboard**: `http://localhost:8000/dashboard` (requires auth)
+
+### ADK Integration URLs
+- **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` (note trailing slash!)
+- **ADK API Docs**: `http://localhost:8000/adk/docs`
+- **Agent Endpoint**: `/adk/apps/job_matching_agent/users/{user_id}/sessions/{session_id}`
+
+### Debug URLs
+- **Debug Agent**: `http://localhost:8000/debug/adk`
+- **Health Check**: `http://localhost:8000/health`
 
 ## Coding Rules
 
 ### What to ALWAYS do:
-- Use Pydantic models for all data structures
-- Implement proper Firebase auth on protected routes
-- Use ADK Artifacts for any file operations
-- Handle errors with try/except blocks
-- Use environment variables for configuration
-- Follow the single-file prototype structure
+- **ADK Integration**: Mount ADK app under `/adk` prefix, never replace main app
+- **Agent Structure**: Use required `job_matching_agent/` directory with `root_agent` variable
+- **Template Organization**: Two-panel dashboard (profile + chat), component-based HTMX responses
+- **Firebase Auth**: Use session cookies, not JWT tokens in requests
+- **Context Passing**: Always pass user context to ADK agent (user_type, etc.)
+- **Error Handling**: Use try/except blocks with proper logging
+- **HTMX Patterns**: Form-based chat interface, partial template responses
+- **Environment Config**: Load all config from environment variables
+- **Logging**: Use structured logging with appropriate levels
+
+### Template Patterns:
+- **Dashboard**: Two-panel grid layout (profile left, chat right)
+- **Chat Interface**: HTMX form with `hx-post="/api/chat"` targeting messages container
+- **HTMX Responses**: Return `components/chat_message.html` for new messages
+- **Mobile Responsive**: Grid collapses to single column on mobile
+- **User Context**: Show different chat welcome based on user_type
+
+### ADK-Specific Rules:
+- **Agent Discovery**: ADK looks for `root_agent` variable in agent directory
+- **Mounting**: Mount ADK app under path, don't replace main FastAPI app
+- **Dev UI**: Always accessible at `/adk/dev-ui/` (with trailing slash)
+- **Agent Communication**: Use ADK's Runner class with user context
+- **File Handling**: Use ADK Artifacts, not custom file upload
 
 ### What to NEVER suggest:
-- Alternative frameworks (no Django, Flask, etc.)
-- Different databases (no PostgreSQL, MongoDB, etc.) 
-- Custom file upload implementations
-- Complex microservice architectures
-- SQLite for any environment
-- Alternative authentication systems
-- Different cloud providers
+- **Replacing ADK patterns**: Don't suggest alternatives to ADK's agent structure
+- **Complex JavaScript**: Keep HTMX-only, minimal custom JS
+- **Alternative auth**: Firebase only, no custom JWT handling
+- **Database alternatives**: Firestore only, no SQLite/PostgreSQL
+- **Microservices**: Single application with mounted sub-apps only
+- **Different agent frameworks**: ADK only, no LangChain/CrewAI alternatives
 
 ### Error Handling Pattern:
 ```python
 try:
-    result = context.save_artifact(filename, artifact)
-except ValueError:
-    return "Service not configured"
+    # ADK agent interaction
+    response = await runner.run_async(user_id, session_id, message, context)
+    return templates.TemplateResponse("components/chat_message.html", context)
 except Exception as e:
-    return f"Operation failed: {str(e)}"
-```
-
-### Environment Configuration:
-```python
-import os
-
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+    logger.error(f"Chat error: {e}")
+    return templates.TemplateResponse("components/chat_error.html", {
+        "request": request,
+        "error": "Failed to process message"
+    })
 ```
 
 ## Development Focus
-- Keep it simple - this is an MVP prototype
-- Prioritize working end-to-end functionality over complex features
-- User types: "job_seeker" and "recruiter" only
-- Single agent handles both user types with context awareness
-- File uploads through chat interface using ADK
+- **MVP Prototype**: Focus on core user flow (signup → dashboard → chat)
+- **User Types**: "company" and "talent" only, single agent handles both
+- **Context-Aware Agent**: Agent adapts responses based on user_type
+- **Clean Integration**: Custom UI + ADK backend, not ADK's default UI
+- **Template-First**: Design templates before implementing routes
+- **Responsive Design**: Mobile-friendly two-panel layout
 
 ## Common Mistakes to Avoid
-- Don't create separate services for different user types
-- Don't implement custom session management
-- Don't use localStorage in FastHTML (use server-side state)
-- Don't create complex database schemas
-- Don't suggest non-Google cloud services
+- **Wrong ADK mounting**: Don't use ADK app as main app, mount under `/adk`
+- **Missing trailing slash**: ADK dev UI needs `/adk/dev-ui/` not `/adk/dev-ui`
+- **Agent structure**: Must have `job_matching_agent/` directory with `root_agent`
+- **Template context**: Always pass `request` object to template responses
+- **User context**: Don't forget to pass user_type to agent for personalization
+- **HTMX targets**: Use correct selectors for message container updates
 
-## File Structure
-```
-/
-├── main.py              # Single FastAPI app file
-├── .env                 # Environment variables
-├── pyproject.toml       # UV dependencies
-├── claude.md            # Full technical documentation
-└── .cursorrules         # This file
-```
-
-When writing code, always reference these patterns and constraints. Focus on MVP functionality that validates the core user flow: signup → dashboard → chat with agents.
+When writing code, always reference these ADK integration patterns. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer.

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Job Matching App{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-form">
+        <h2>Sign Up as {{ user_type | title }}</h2>
+        
+        <form 
+            hx-post="/api/auth/register" 
+            hx-target="#auth-result"
+            hx-swap="innerHTML"
+        >
+            <input type="hidden" name="user_type" value="{{ user_type }}">
+            
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" name="password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="confirm_password">Confirm Password</label>
+                <input type="password" name="confirm_password" required>
+            </div>
+            
+            {% if user_type == 'talent' %}
+            <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" name="name" required>
+            </div>
+            {% else %}
+            <div class="form-group">
+                <label for="company">Company Name</label>
+                <input type="text" name="company" required>
+            </div>
+            {% endif %}
+            
+            <button type="submit" class="btn-primary">Create Account</button>
+        </form>
+        
+        <div id="auth-result"></div>
+        
+        <p>Already have an account? 
+            <a href="{{ url_for('login_page') }}">Sign in here</a>
+        </p>
+    </div>
+</div>
+{% endblock %} 
