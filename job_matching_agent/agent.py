@@ -7,7 +7,7 @@ from google.adk.agents import Agent
 # This MUST be named 'root_agent' for ADK to discover it
 root_agent = Agent(
     name="job_matching_agent",
-    model="gemini-2.0-flash-exp",
+    model="gemini-2.0-flash-lite",
     instruction="""You are a job matching assistant for a professional platform.
 
 Context: You will receive user information including their user_type ('talent' or 'company').

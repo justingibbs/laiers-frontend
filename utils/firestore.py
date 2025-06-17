@@ -7,6 +7,13 @@ import json
 
 logger = logging.getLogger(__name__)
 
+# Define predefined company list
+AVAILABLE_COMPANIES = [
+    {"id": "company_1", "name": "Company_1", "description": "Leading tech company focused on innovation"},
+    {"id": "company_2", "name": "Company_2", "description": "Global consulting and services firm"},
+    {"id": "company_3", "name": "Company_3", "description": "Fast-growing startup in fintech space"}
+]
+
 class FirestoreService:
     def __init__(self):
         # Load project ID from web config
@@ -31,18 +38,33 @@ class FirestoreService:
             logger.error(f"Failed to initialize Firestore client: {e}")
             raise
     
-    async def create_user_profile(self, user_id: str, email: str, user_type: str) -> bool:
+    async def create_user_profile(self, user_id: str, email: str, user_type: str, company_id: str = None) -> bool:
         """Create a new user profile in Firestore"""
         try:
+            # For company users, validate the company_id
+            selected_company = None
+            if user_type == 'company':
+                if not company_id:
+                    logger.error("Company ID required for company type users")
+                    return False
+                
+                # Find the company in our predefined list
+                selected_company = next((company for company in AVAILABLE_COMPANIES if company["id"] == company_id), None)
+                if not selected_company:
+                    logger.error(f"Invalid company ID: {company_id}")
+                    return False
+            
             user_data = {
                 'email': email,
                 'user_type': user_type,
+                'company_id': company_id if user_type == 'company' else None,
+                'company_name': selected_company["name"] if selected_company else None,
                 'created_at': datetime.utcnow(),
                 'updated_at': datetime.utcnow(),
                 'is_active': True,
                 'profile': {
                     'name': None,
-                    'company': None if user_type == 'talent' else '',
+                    'company': selected_company["name"] if selected_company else (None if user_type == 'talent' else ''),
                     'skills': [] if user_type == 'talent' else None,
                     'experience_level': None if user_type == 'talent' else None,
                     'bio': None,
@@ -98,3 +120,33 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error deleting user profile: {e}")
             return False
+
+    async def get_company_info(self, company_id: str) -> Optional[Dict[str, Any]]:
+        """Get company information by ID"""
+        try:
+            company = next((company for company in AVAILABLE_COMPANIES if company["id"] == company_id), None)
+            if company:
+                # Get all users from this company
+                company_users = []
+                users_query = self.users_collection.where('company_id', '==', company_id).stream()
+                for user_doc in users_query:
+                    user_data = user_doc.to_dict()
+                    company_users.append({
+                        'id': user_doc.id,
+                        'email': user_data.get('email'),
+                        'profile': user_data.get('profile', {})
+                    })
+                
+                return {
+                    **company,
+                    'users': company_users,
+                    'user_count': len(company_users)
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error getting company info: {e}")
+            return None
+
+    def get_available_companies(self) -> list:
+        """Get list of available companies"""
+        return AVAILABLE_COMPANIES

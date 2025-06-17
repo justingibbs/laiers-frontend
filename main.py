@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import httpx
 from fastapi import FastAPI, Request, Form, HTTPException, Cookie, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from google.adk.cli.fast_api import get_fast_api_app
@@ -74,6 +75,17 @@ except Exception as e:
 
 # Create the main FastAPI app for your custom routes
 app = FastAPI(title="Job Matching App")
+
+# Add custom exception handler for validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Validation error on {request.url}: {exc.errors()}")
+    return HTMLResponse(content=f"""
+    <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+        <p><strong>❌ Form Validation Error</strong></p>
+        <p>Please check your form data. Details: {exc.errors()}</p>
+    </div>
+    """, status_code=422)
 
 # Initialize templates and static files
 templates = Jinja2Templates(directory="templates")
@@ -169,51 +181,132 @@ async def login_page(request: Request, user = Depends(optional_auth)):
 
 @app.post("/api/register")
 async def register(request: Request):
-    """Handle registration with Firebase"""
+    """Handle registration with Firebase - supports both JSON and Form data"""
     try:
-        data = await request.json()
-        id_token = data.get('idToken')
-        user_type = data.get('userType')
-        email = data.get('email')
+        # Check content type to determine how to parse data
+        content_type = request.headers.get("content-type", "")
         
-        logger.info(f"Registration attempt - Email: {email}, User Type: {user_type}")
+        if "application/json" in content_type:
+            # Handle JSON data from landing page (talent users only)
+            data = await request.json()
+            user_type = data.get('userType')  # Note: camelCase from JavaScript
+            email = data.get('email')
+            id_token = data.get('idToken')
+            company_id = None
+            
+            logger.info(f"JSON Registration attempt - Email: {email}, User Type: {user_type}")
+            
+            if not id_token or user_type not in ['company', 'talent']:
+                raise HTTPException(status_code=400, detail="Invalid registration data")
+                
+            # Company users from landing page should be redirected, not processed here
+            if user_type == 'company':
+                raise HTTPException(status_code=400, detail="Company registration requires company selection")
+                
+            # Verify the ID token
+            try:
+                decoded_token = auth.verify_id_token(id_token)
+                user_id = decoded_token['uid']
+                logger.info(f"Token verified - UID: {user_id}")
+            except Exception as e:
+                logger.error(f"Token verification error: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
         
-        if not id_token or user_type not in ['company', 'talent']:
-            raise HTTPException(status_code=400, detail="Invalid registration data")
-        
-        # Verify the ID token
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            user_id = decoded_token['uid']
-            logger.info(f"Token verified - UID: {user_id}")
-        except Exception as e:
-            logger.error(f"Token verification error: {e}")
-            raise HTTPException(status_code=400, detail=str(e))
+        else:
+            # Handle form data from registration page
+            form_data = await request.form()
+            user_type = form_data.get('user_type')
+            email = form_data.get('email')
+            password = form_data.get('password')
+            confirm_password = form_data.get('confirm_password')
+            name = form_data.get('name')
+            company_id = form_data.get('company_id')
+            
+            logger.info(f"Form Registration attempt - Email: {email}, User Type: {user_type}, Company ID: {company_id}")
+            
+            if user_type not in ['company', 'talent']:
+                logger.error(f"Invalid user type: {user_type}")
+                raise HTTPException(status_code=400, detail="Invalid user type")
+            
+            if password != confirm_password:
+                logger.error("Password mismatch")
+                raise HTTPException(status_code=400, detail="Passwords do not match")
+            
+            # For company users, validate company selection
+            if user_type == 'company' and not company_id:
+                logger.error(f"Missing company_id for company user. Received: {company_id}")
+                raise HTTPException(status_code=400, detail="Company selection is required")
+            
+            try:
+                # Create the user in Firebase Auth
+                user_record = auth.create_user(
+                    email=email,
+                    password=password,
+                    display_name=name
+                )
+                user_id = user_record.uid
+                logger.info(f"Created Firebase user - UID: {user_id}")
+            except Exception as e:
+                logger.error(f"Firebase user creation error: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
         
         # Create user profile in Firestore
-        profile_created = await firestore_service.create_user_profile(user_id, email, user_type)
+        profile_created = await firestore_service.create_user_profile(user_id, email, user_type, company_id)
         if not profile_created:
+            # If Firestore profile creation fails, delete the Firebase user
+            try:
+                auth.delete_user(user_id)
+            except Exception as e:
+                logger.error(f"Failed to clean up Firebase user after Firestore error: {e}")
             raise HTTPException(status_code=500, detail="Failed to create user profile")
         
-        # Create session cookie
-        expires_in = timedelta(days=14)
-        session_cookie = auth.create_session_cookie(id_token, expires_in=expires_in)
-        
-        response = Response(content='{"success": true, "redirect": "/dashboard"}', media_type="application/json")
-        response.set_cookie(
-            key="session_token",
-            value=session_cookie,
-            max_age=int(expires_in.total_seconds()),
-            httponly=True,
-            secure=ENVIRONMENT == "production"
-        )
-        
         logger.info(f"Registration successful for user: {email}")
-        return response
         
+        # Return appropriate response based on request type
+        if "application/json" in content_type:
+            # JSON response for Firebase Auth flow (talent users)
+            # Create session cookie for JSON requests
+            if 'id_token' in locals():
+                expires_in = timedelta(days=14)
+                session_cookie = auth.create_session_cookie(id_token, expires_in=expires_in)
+                
+                response = Response(content='{"success": true, "redirect": "/dashboard"}', media_type="application/json")
+                response.set_cookie(
+                    key="session_token",
+                    value=session_cookie,
+                    max_age=int(expires_in.total_seconds()),
+                    httponly=True,
+                    secure=ENVIRONMENT == "production"
+                )
+                return response
+            else:
+                return {"success": True, "redirect": "/dashboard"}
+        else:
+            # HTML response for HTMX form flow (company users)
+            return HTMLResponse(content=f"""
+            <div style="color: green; padding: 1rem; border: 1px solid green; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>✅ Registration Successful!</strong></p>
+                <p>Account created for {email}. You can now <a href="/login">sign in</a>.</p>
+            </div>
+            """)
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Registration error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Exception type: {type(e)}")
+        
+        # Return appropriate error response based on request type
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            raise HTTPException(status_code=400, detail=str(e))
+        else:
+            return HTMLResponse(content=f"""
+            <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>❌ Registration Failed</strong></p>
+                <p>{str(e)}</p>
+            </div>
+            """)
 
 @app.post("/api/login")
 async def login(request: Request):
@@ -228,7 +321,8 @@ async def login(request: Request):
         # Verify the ID token
         try:
             decoded_token = auth.verify_id_token(id_token)
-            logger.info(f"Login successful - UID: {decoded_token.get('uid')}")
+            user_id = decoded_token.get('uid')
+            logger.info(f"Login successful - UID: {user_id}")
         except Exception as e:
             logger.error(f"Token verification error: {e}")
             raise HTTPException(status_code=400, detail=str(e))
@@ -266,6 +360,32 @@ async def dashboard(request: Request, user = Depends(require_auth)):
         "request": request,
         "user": user,
         "user_profile": user_profile,
+        "firebase_config": web_config
+    })
+
+@app.get("/company/{company_id}", response_class=HTMLResponse)
+async def company_page(request: Request, company_id: str, user = Depends(require_auth)):
+    """Company page - only accessible to users affiliated with the company"""
+    # Get user profile to check company affiliation
+    user_profile = await firestore_service.get_user_profile(user['uid'])
+    if not user_profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    
+    # Check if user is affiliated with this company
+    if user_profile.get('user_type') != 'company' or user_profile.get('company_id') != company_id:
+        raise HTTPException(status_code=403, detail="You don't have access to this company page")
+    
+    # Get company information
+    company_info = await firestore_service.get_company_info(company_id)
+    if not company_info:
+        raise HTTPException(status_code=404, detail="Company not found")
+    
+    logger.info(f"Company page accessed: {company_id} by user: {user.get('email')}")
+    return templates.TemplateResponse("company.html", {
+        "request": request,
+        "user": user,
+        "user_profile": user_profile,
+        "company": company_info,
         "firebase_config": web_config
     })
 
@@ -475,6 +595,172 @@ async def test_agent_discovery():
             }
     except Exception as e:
         return {"error": str(e)}
+
+# Test company functionality
+@app.get("/test/companies")
+async def test_companies():
+    """Test endpoint to see available companies and create test data"""
+    companies = firestore_service.get_available_companies()
+    
+    # Also test getting company info
+    company_info = {}
+    for company in companies:
+        company_data = await firestore_service.get_company_info(company["id"])
+        company_info[company["id"]] = company_data
+    
+    return {
+        "available_companies": companies,
+        "company_details": company_info,
+        "registration_example": {
+            "talent_registration": "/register?user_type=talent",
+            "company_registration": "/register?user_type=company"
+        }
+    }
+
+# Test Firestore data
+@app.get("/test/firestore-users")
+async def test_firestore_users():
+    """Debug endpoint to see what users are in Firestore"""
+    try:
+        # Get all users from Firestore
+        users_ref = firestore_service.users_collection
+        all_users = []
+        
+        for doc in users_ref.stream():
+            user_data = doc.to_dict()
+            all_users.append({
+                "id": doc.id,
+                "email": user_data.get("email"),
+                "user_type": user_data.get("user_type"),
+                "company_id": user_data.get("company_id"),
+                "company_name": user_data.get("company_name"),
+                "created_at": str(user_data.get("created_at"))
+            })
+        
+        return {
+            "total_users": len(all_users),
+            "users": all_users
+        }
+    except Exception as e:
+        logger.error(f"Error fetching users: {e}")
+        return {"error": str(e)}
+
+# HTMX endpoints for dynamic form fields
+@app.get("/api/form-fields/{user_type}")
+async def get_form_fields(request: Request, user_type: str):
+    """Return form fields based on user type selection"""
+    if user_type == "company":
+        return HTMLResponse(content="""
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="company_id">Select Your Company</label>
+            <select name="company_id" required>
+                <option value="">Choose a company...</option>
+                <option value="company_1">Company_1</option>
+                <option value="company_2">Company_2</option>
+                <option value="company_3">Company_3</option>
+            </select>
+        </div>
+        
+        <input type="hidden" name="user_type" value="company">
+        """)
+    else:  # talent
+        return HTMLResponse(content="""
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="name">Full Name</label>
+            <input type="text" name="name" required>
+        </div>
+        
+        <input type="hidden" name="user_type" value="talent">
+        """)
+
+# Test page for company flow
+@app.get("/test/company-flow")
+async def test_company_flow(request: Request):
+    """Test page showing the complete company registration flow"""
+    return templates.TemplateResponse("test_company_flow.html", {"request": request})
+
+# Test registration form directly
+@app.get("/test/register-form")
+async def test_register_form():
+    """Test endpoint to show a working registration form"""
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test Registration</title>
+        <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+        <link rel="stylesheet" href="/static/css/styles.css">
+    </head>
+    <body>
+        <div class="auth-container">
+            <div class="auth-form">
+                <h2>Test Company Registration</h2>
+                <form hx-post="/api/register" hx-target="#result" hx-swap="innerHTML">
+                    <input type="hidden" name="user_type" value="company">
+                    
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" name="email" value="testuser@example.com" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" name="password" value="test123" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm Password</label>
+                        <input type="password" name="confirm_password" value="test123" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="company_id">Select Your Company</label>
+                        <select name="company_id" required>
+                            <option value="">Choose a company...</option>
+                            <option value="company_1">Company_1</option>
+                            <option value="company_2" selected>Company_2</option>
+                            <option value="company_3">Company_3</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary">Create Account</button>
+                </form>
+                <div id="result"></div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """)
 
 # Test complete ADK flow
 @app.get("/test/adk-complete-flow")

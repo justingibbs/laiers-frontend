@@ -317,6 +317,16 @@
                     <span class="field-value">{{ user_profile.profile.company }}</span>
                 </div>
                 {% endif %}
+                {% if user_profile.company_id %}
+                <div class="profile-field">
+                    <span class="field-label">Company Portal:</span>
+                    <span class="field-value">
+                        <a href="/company/{{ user_profile.company_id }}" style="color: #1976d2; text-decoration: none; font-weight: 500;">
+                            🏢 Visit {{ user_profile.company_name }} Portal →
+                        </a>
+                    </span>
+                </div>
+                {% endif %}
                 {% if user_profile.profile.industry %}
                 <div class="profile-field">
                     <span class="field-label">Industry:</span>
