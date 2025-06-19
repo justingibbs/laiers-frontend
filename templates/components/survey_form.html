@@ -1,0 +1,35 @@
+<form 
+    class="survey-form"
+    hx-post="/api/opportunities/{{ opportunity_id }}/apply"
+    hx-target="#application-result"
+    hx-swap="innerHTML"
+    hx-indicator="#submit-button"
+>
+    {% for question in survey_questions %}
+    <div class="form-group">
+        <label class="form-label" for="question_{{ loop.index0 }}">
+            {{ question.question }}
+            {% if question.required %}
+            <span class="required-indicator">*</span>
+            {% endif %}
+        </label>
+        <textarea 
+            id="question_{{ loop.index0 }}"
+            name="question_{{ loop.index0 }}"
+            class="form-input"
+            placeholder="Please provide your answer..."
+            {% if question.required %}required{% endif %}
+        ></textarea>
+    </div>
+    {% endfor %}
+    
+    <button 
+        id="submit-button"
+        type="submit" 
+        class="submit-button"
+        hx-disabled-elt="this"
+    >
+        <span class="htmx-indicator">Submitting...</span>
+        <span>Submit Application</span>
+    </button>
+</form> 

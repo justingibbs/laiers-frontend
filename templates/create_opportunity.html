@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+
+{% block title %}Create Opportunity - {{ company.name }} - Job Matching App{% endblock %}
+
+{% block extra_head %}
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f5f5f5;
+    }
+    
+    .opportunity-header {
+        background-color: #fff;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .opportunity-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .back-link {
+        background-color: #1976d2;
+        color: white;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.25rem;
+    }
+    
+    .back-link:hover {
+        background-color: #1565c0;
+    }
+    
+    .content {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+    
+    .company-card, .creation-card {
+        background-color: white;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        height: fit-content;
+    }
+    
+    .creation-card {
+        height: 600px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .company-title, .creation-title {
+        color: #333;
+        margin-bottom: 1rem;
+    }
+    
+    .company-description {
+        color: #666;
+        margin-bottom: 1.5rem;
+        line-height: 1.5;
+    }
+    
+    .progress-section {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .progress-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.75rem;
+    }
+    
+    .progress-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .progress-step {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        color: #666;
+    }
+    
+    .step-icon {
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+    
+    .step-pending {
+        background-color: #e0e0e0;
+        color: #999;
+    }
+    
+    .step-active {
+        background-color: #1976d2;
+        color: white;
+    }
+    
+    .step-complete {
+        background-color: #4caf50;
+        color: white;
+    }
+    
+    /* Chat Styles */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background-color: #fafafa;
+    }
+    
+    .chat-form {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .chat-input {
+        flex: 1;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 0.25rem;
+        font-size: 1rem;
+    }
+    
+    .chat-button {
+        padding: 0.75rem 1.5rem;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+    }
+    
+    .chat-button:hover {
+        background-color: #45a049;
+    }
+    
+    .message-pair {
+        margin-bottom: 1.5rem;
+    }
+    
+    .user-message, .agent-message {
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: 1rem;
+        max-width: 80%;
+        word-wrap: break-word;
+    }
+    
+    .user-message {
+        background-color: #4caf50;
+        color: white;
+        margin-left: auto;
+        text-align: right;
+    }
+    
+    .agent-message {
+        background-color: #e8f5e8;
+        color: #333;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        margin-right: auto;
+    }
+    
+    .message-avatar {
+        font-size: 1.5rem;
+        margin-top: 0.25rem;
+    }
+    
+    .message-content {
+        flex: 1;
+    }
+    
+    .message-timestamp {
+        font-size: 0.75rem;
+        opacity: 0.7;
+        margin-top: 0.25rem;
+    }
+    
+    .welcome-message {
+        text-align: center;
+        color: #666;
+        font-style: italic;
+        padding: 2rem 1rem;
+        background-color: #f0f8f0;
+        border-radius: 0.5rem;
+        border: 1px solid #4caf50;
+    }
+    
+    .error-message {
+        background-color: #ffebee;
+        color: #c62828;
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        border: 1px solid #ef5350;
+    }
+    
+    .creation-tips {
+        background-color: #e3f2fd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1976d2;
+        margin-top: 1rem;
+    }
+    
+    .creation-tips h4 {
+        margin: 0 0 0.5rem 0;
+        color: #1976d2;
+    }
+    
+    .creation-tips ul {
+        margin: 0;
+        padding-left: 1.25rem;
+        color: #555;
+    }
+    
+    .creation-tips li {
+        margin-bottom: 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    @media (max-width: 768px) {
+        .content {
+            grid-template-columns: 1fr;
+        }
+        
+        .creation-card {
+            height: 500px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="opportunity-header">
+    <div class="opportunity-info">
+        <h1>Create New Opportunity</h1>
+        <span style="background-color: #e8f5e8; padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.875rem; color: #4caf50;">
+            🤖 AI-Guided Creation
+        </span>
+    </div>
+    <a href="/company/{{ company.id }}" class="back-link">← Back to {{ company.name }}</a>
+</div>
+
+<div class="content">
+    <!-- Company Information & Progress Panel -->
+    <div class="company-card">
+        <h2 class="company-title">{{ company.name }}</h2>
+        
+        <div class="company-description">
+            {{ company.description }}
+        </div>
+        
+        <!-- Creation Progress -->
+        <div class="progress-section">
+            <div class="progress-title">Creation Progress</div>
+            <div class="progress-steps">
+                <div class="progress-step">
+                    <div class="step-icon step-active">1</div>
+                    <span>Start conversation with AI assistant</span>
+                </div>
+                <div class="progress-step">
+                    <div class="step-icon step-pending">2</div>
+                    <span>Describe job title and requirements</span>
+                </div>
+                <div class="progress-step">
+                    <div class="step-icon step-pending">3</div>
+                    <span>Define location and employment type</span>
+                </div>
+                <div class="progress-step">
+                    <div class="step-icon step-pending">4</div>
+                    <span>Set salary range (optional)</span>
+                </div>
+                <div class="progress-step">
+                    <div class="step-icon step-pending">5</div>
+                    <span>Generate survey questions</span>
+                </div>
+                <div class="progress-step">
+                    <div class="step-icon step-pending">✓</div>
+                    <span>Publish opportunity</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tips -->
+        <div class="creation-tips">
+            <h4>💡 Creation Tips</h4>
+            <ul>
+                <li>Be specific about required skills and experience</li>
+                <li>Include company culture and benefits</li>
+                <li>Mention growth opportunities</li>
+                <li>The AI will help generate relevant screening questions</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Chat Interface Panel -->
+    <div class="creation-card">
+        <h2 class="creation-title">🤖 AI Opportunity Assistant</h2>
+        
+        <div id="chat-messages" class="chat-messages">
+            <div class="welcome-message">
+                <p><strong>Welcome to AI-guided opportunity creation!</strong></p>
+                <p>I'll help you create a compelling job opportunity for {{ company.name }}. Let's start by describing the role you want to fill.</p>
+                <p style="margin-top: 1rem; font-size: 0.875rem;">
+                    <strong>Try saying:</strong> "I need to hire a senior software engineer" or "We're looking for a marketing manager"
+                </p>
+            </div>
+        </div>
+        
+        <form 
+            id="opportunity-chat-form"
+            class="chat-form"
+            hx-post="/api/opportunities/create" 
+            hx-target="#chat-messages" 
+            hx-swap="beforeend"
+            hx-trigger="submit"
+            hx-vals='{"company_id": "{{ company.id }}"}'
+        >
+            <input 
+                type="text" 
+                name="message" 
+                class="chat-input"
+                placeholder="Describe the job opportunity you want to create..." 
+                required 
+                autocomplete="off"
+                autofocus
+            >
+            <button type="submit" class="chat-button">Send</button>
+        </form>
+    </div>
+</div>
+
+<script>
+// Clear the input after successful submission
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.detail.target.id === 'chat-messages') {
+        const form = document.getElementById('opportunity-chat-form');
+        const input = form.querySelector('input[name="message"]');
+        input.value = '';
+        input.focus();
+        
+        // Auto-scroll chat to bottom
+        const chatContainer = document.getElementById('chat-messages');
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+});
+
+// Handle form submission errors
+document.body.addEventListener('htmx:responseError', function(event) {
+    if (event.detail.xhr.status === 422) {
+        // Handle validation errors
+        console.error('Validation error:', event.detail.xhr.response);
+    }
+});
+</script>
+{% endblock %} 

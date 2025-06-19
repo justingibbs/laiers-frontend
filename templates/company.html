@@ -128,9 +128,97 @@
         font-size: 0.875rem;
     }
     
+    .opportunities-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    
+    .create-opportunity-btn {
+        background-color: #4caf50;
+        color: white;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.25rem;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    
+    .create-opportunity-btn:hover {
+        background-color: #45a049;
+    }
+    
+    .opportunity-card {
+        border: 1px solid #eee;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background-color: #fff;
+        transition: box-shadow 0.2s;
+    }
+    
+    .opportunity-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .opportunity-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.5rem;
+        font-size: 1.1rem;
+    }
+    
+    .opportunity-meta {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.875rem;
+        color: #666;
+    }
+    
+    .opportunity-description {
+        color: #555;
+        line-height: 1.4;
+        margin-bottom: 1rem;
+    }
+    
+    .opportunity-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .view-opportunity-btn {
+        background-color: #1976d2;
+        color: white;
+        text-decoration: none;
+        padding: 0.4rem 0.8rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    .view-opportunity-btn:hover {
+        background-color: #1565c0;
+    }
+    
+    .no-opportunities {
+        text-align: center;
+        padding: 2rem;
+        color: #666;
+        background-color: #f9f9f9;
+        border-radius: 0.5rem;
+        border: 2px dashed #ddd;
+    }
+    
     @media (max-width: 768px) {
         .content {
             grid-template-columns: 1fr;
+        }
+        
+        .opportunities-header {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
         }
     }
 </style>
@@ -160,8 +248,8 @@
                 <div class="stat-label">Team Members</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">3</div>
-                <div class="stat-label">Total Companies</div>
+                <div class="stat-number">{{ opportunities|length }}</div>
+                <div class="stat-label">Job Opportunities</div>
             </div>
         </div>
         
@@ -177,28 +265,56 @@
 
     <!-- Team Members Panel -->
     <div class="team-card">
-        <h2 class="team-title">Team Members ({{ company.user_count }})</h2>
+        <div class="opportunities-header">
+            <h2 class="team-title">Job Opportunities ({{ opportunities|length }})</h2>
+            <a href="/company/{{ company.id }}/opportunities/create" class="create-opportunity-btn">
+                + Create New Opportunity
+            </a>
+        </div>
         
-        {% if company.users %}
-            {% for member in company.users %}
-            <div class="team-member">
-                <div class="member-avatar">
-                    {{ member.email[0]|upper }}
+        {% if opportunities %}
+            {% for opportunity in opportunities %}
+            <div class="opportunity-card">
+                <div class="opportunity-title">
+                    {{ opportunity.title }}
                 </div>
-                <div class="member-info">
-                    <div class="member-name">
-                        {{ member.profile.name or member.email.split('@')[0]|title }}
-                    </div>
-                    <div class="member-email">{{ member.email }}</div>
+                <div class="opportunity-meta">
+                    <span>📍 {{ opportunity.location or 'Remote' }}</span>
+                    <span>💼 {{ opportunity.employment_type or 'Full-time' }}</span>
+                    <span>📅 {{ opportunity.created_at.strftime('%m/%d/%Y') if opportunity.created_at else 'Recently' }}</span>
+                </div>
+                <div class="opportunity-description">
+                    {{ opportunity.description[:150] }}{% if opportunity.description|length > 150 %}...{% endif %}
+                </div>
+                <div class="opportunity-actions">
+                    <a href="/opportunities/{{ opportunity.id }}" class="view-opportunity-btn">
+                        View Details
+                    </a>
+                    {% if opportunity.survey_questions %}
+                    <span style="font-size: 0.875rem; color: #666; padding: 0.4rem 0;">
+                        {{ opportunity.survey_questions|length }} survey questions
+                    </span>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
         {% else %}
-            <div style="text-align: center; padding: 2rem; color: #666;">
-                <p>No other team members yet.</p>
-                <p>You're the first member of {{ company.name }}!</p>
+            <div class="no-opportunities">
+                <p><strong>No Job Opportunities Yet</strong></p>
+                <p>Start creating opportunities to attract top talent!</p>
+                <a href="/company/{{ company.id }}/opportunities/create" class="create-opportunity-btn" style="display: inline-block; margin-top: 1rem;">
+                    Create Your First Opportunity
+                </a>
             </div>
         {% endif %}
+        
+        <!-- Team Summary -->
+        <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #eee;">
+            <h3 style="color: #666; font-size: 1rem; margin-bottom: 0.5rem;">Team Overview</h3>
+            <div style="color: #888; font-size: 0.875rem;">
+                {{ company.user_count }} team member{{ 's' if company.user_count != 1 else '' }} from {{ company.name }}
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %} 

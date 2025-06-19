@@ -150,3 +150,122 @@ class FirestoreService:
     def get_available_companies(self) -> list:
         """Get list of available companies"""
         return AVAILABLE_COMPANIES
+
+    # Opportunity Management Methods
+    async def create_opportunity(self, opportunity_data: Dict[str, Any]) -> Optional[str]:
+        """Create a new opportunity in Firestore"""
+        try:
+            # Add timestamp
+            opportunity_data['created_at'] = datetime.utcnow()
+            opportunity_data['updated_at'] = datetime.utcnow()
+            opportunity_data['status'] = 'active'
+            
+            # Create the opportunity document
+            doc_ref = self.db.collection('opportunities').document()
+            doc_ref.set(opportunity_data)
+            
+            logger.info(f"Created opportunity: {doc_ref.id} for company: {opportunity_data.get('company_id')}")
+            return doc_ref.id
+            
+        except Exception as e:
+            logger.error(f"Error creating opportunity: {e}")
+            return None
+
+    async def get_opportunities_by_company(self, company_id: str) -> list:
+        """Get all opportunities for a specific company"""
+        try:
+            # Simplified query without order_by to avoid index requirement
+            query = self.db.collection('opportunities').where('company_id', '==', company_id).where('status', '==', 'active')
+            docs = query.stream()
+            opportunities = []
+            for doc in docs:
+                opportunity_data = doc.to_dict()
+                opportunity_data['id'] = doc.id
+                opportunities.append(opportunity_data)
+            
+            # Sort by created_at in Python (newest first)
+            opportunities.sort(key=lambda x: x.get('created_at'), reverse=True)
+            
+            logger.info(f"Retrieved {len(opportunities)} opportunities for company: {company_id}")
+            return opportunities
+        except Exception as e:
+            logger.error(f"Error getting opportunities for company {company_id}: {e}")
+            return []
+
+    async def get_all_opportunities(self) -> list:
+        """Get all active opportunities across all companies"""
+        try:
+            query = self.db.collection('opportunities').where('status', '==', 'active')
+            docs = query.stream()
+            opportunities = []
+            for doc in docs:
+                opportunity_data = doc.to_dict()
+                opportunity_data['id'] = doc.id
+                opportunities.append(opportunity_data)
+            
+            # Sort by created_at in Python (newest first)
+            opportunities.sort(key=lambda x: x.get('created_at'), reverse=True)
+            
+            logger.info(f"Retrieved {len(opportunities)} total active opportunities")
+            return opportunities
+        except Exception as e:
+            logger.error(f"Error getting all opportunities: {e}")
+            return []
+
+    async def get_opportunity(self, opportunity_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific opportunity by ID"""
+        try:
+            doc = self.db.collection('opportunities').document(opportunity_id).get()
+            if doc.exists:
+                opportunity_data = doc.to_dict()
+                opportunity_data['id'] = doc.id
+                return opportunity_data
+            return None
+        except Exception as e:
+            logger.error(f"Error getting opportunity {opportunity_id}: {e}")
+            return None
+
+    async def submit_application(self, application_data: Dict[str, Any]) -> Optional[str]:
+        """Submit an application for an opportunity"""
+        try:
+            # Add timestamp
+            application_data['applied_at'] = datetime.utcnow()
+            
+            # Create the application document
+            doc_ref = self.db.collection('applications').document()
+            doc_ref.set(application_data)
+            
+            logger.info(f"Created application: {doc_ref.id} for opportunity: {application_data.get('opportunity_id')}")
+            return doc_ref.id
+            
+        except Exception as e:
+            logger.error(f"Error creating application: {e}")
+            return None
+
+    async def get_applications_by_opportunity(self, opportunity_id: str) -> list:
+        """Get all applications for a specific opportunity"""
+        try:
+            applications = []
+            query = self.db.collection('applications').where('opportunity_id', '==', opportunity_id).order_by('applied_at', direction=firestore.Query.DESCENDING)
+            
+            for doc in query.stream():
+                application_data = doc.to_dict()
+                application_data['id'] = doc.id
+                applications.append(application_data)
+            
+            logger.info(f"Retrieved {len(applications)} applications for opportunity: {opportunity_id}")
+            return applications
+            
+        except Exception as e:
+            logger.error(f"Error getting applications for opportunity {opportunity_id}: {e}")
+            return []
+
+    async def check_existing_application(self, opportunity_id: str, applicant_id: str) -> bool:
+        """Check if user has already applied to this opportunity"""
+        try:
+            query = self.db.collection('applications').where('opportunity_id', '==', opportunity_id).where('applicant_id', '==', applicant_id).limit(1)
+            docs = list(query.stream())
+            return len(docs) > 0
+        except Exception as e:
+            logger.error(f"Error checking existing application: {e}")
+            return False
