@@ -1,0 +1,31 @@
+<div class="opportunity-card">
+    <div class="opportunity-title">
+        {{ opportunity.title }}
+    </div>
+    <div class="opportunity-meta">
+        <span>🏢 {{ opportunity.company_name }}</span>
+        <span>📍 {{ opportunity.location or 'Remote' }}</span>
+        <span>💼 {{ opportunity.employment_type or 'Full-time' }}</span>
+        {% if opportunity.salary_range %}
+        <span>💰 {{ opportunity.salary_range }}</span>
+        {% endif %}
+    </div>
+    <div class="opportunity-description">
+        {{ opportunity.description[:200] }}{% if opportunity.description|length > 200 %}...{% endif %}
+    </div>
+    <div class="opportunity-footer">
+        <div class="opportunity-actions">
+            <a href="/opportunities/{{ opportunity.id }}" class="view-opportunity-btn">
+                View Details & Apply
+            </a>
+            {% if opportunity.survey_questions %}
+            <span class="survey-count">
+                {{ opportunity.survey_questions|length }} survey questions
+            </span>
+            {% endif %}
+        </div>
+        <div class="opportunity-date">
+            Posted {{ opportunity.created_at.strftime('%m/%d/%Y') if opportunity.created_at else 'Recently' }}
+        </div>
+    </div>
+</div> 

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Registration Flow Test</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        .test-container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+        }
+        .test-section {
+            background: white;
+            margin: 1rem 0;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background-color: #1976d2;
+            color: white;
+            text-decoration: none;
+            border-radius: 0.25rem;
+            margin: 0.5rem;
+        }
+        .test-button:hover {
+            background-color: #1565c0;
+        }
+        .test-button.green {
+            background-color: #4caf50;
+        }
+        .test-button.green:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Company Registration Flow Test</h1>
+        
+        <div class="test-section">
+            <h2>Step 1: Homepage Flow</h2>
+            <p>The user journey for company registration:</p>
+            <ol>
+                <li>Visit the homepage</li>
+                <li>Click "I'm Hiring" button</li>
+                <li>Click "Create Account"</li>
+                <li>Should be redirected to registration page with company dropdown</li>
+            </ol>
+            <a href="/" class="test-button">Go to Homepage</a>
+        </div>
+        
+        <div class="test-section">
+            <h2>Step 2: Direct Registration</h2>
+            <p>Direct access to company registration:</p>
+            <a href="/register?user_type=company" class="test-button green">Company Registration (with dropdown)</a>
+            <a href="/register?user_type=talent" class="test-button">Talent Registration (no dropdown)</a>
+        </div>
+        
+        <div class="test-section">
+            <h2>Step 3: Test Data</h2>
+            <p>Check what's in the system:</p>
+            <a href="/test/companies" class="test-button">View Companies & Users</a>
+            <a href="/test/firestore-users" class="test-button">View All Users</a>
+        </div>
+        
+        <div class="test-section">
+            <h2>Expected Behavior</h2>
+            <div style="background: #f0f8ff; padding: 1rem; border-radius: 0.25rem; margin: 1rem 0;">
+                <h4>✅ What Should Happen:</h4>
+                <ul>
+                    <li><strong>Homepage → "I'm Hiring" → "Create Account"</strong> → Redirects to registration page</li>
+                    <li><strong>Registration page</strong> → Shows company dropdown with 3 options</li>
+                    <li><strong>After selecting company</strong> → Creates user with company affiliation</li>
+                    <li><strong>Dashboard</strong> → Shows company portal link</li>
+                    <li><strong>Company page</strong> → Shows company info and team members</li>
+                </ul>
+            </div>
+            
+            <div style="background: #fff8dc; padding: 1rem; border-radius: 0.25rem; margin: 1rem 0;">
+                <h4>🔍 How to Test:</h4>
+                <ol>
+                    <li>Open homepage in browser</li>
+                    <li>Click "I'm Hiring" (should highlight the button)</li>
+                    <li>Fill in email/password</li>
+                    <li>Click "Create Account"</li>
+                    <li>Should redirect to <code>/register?user_type=company</code></li>
+                    <li>Should see dropdown with Company_1, Company_2, Company_3</li>
+                </ol>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Available Companies</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <div style="border: 1px solid #ddd; padding: 1rem; border-radius: 0.25rem;">
+                    <h4>Company_1</h4>
+                    <p>Leading tech company focused on innovation</p>
+                </div>
+                <div style="border: 1px solid #ddd; padding: 1rem; border-radius: 0.25rem;">
+                    <h4>Company_2</h4>
+                    <p>Global consulting and services firm</p>
+                </div>
+                <div style="border: 1px solid #ddd; padding: 1rem; border-radius: 0.25rem;">
+                    <h4>Company_3</h4>
+                    <p>Fast-growing startup in fintech space</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 

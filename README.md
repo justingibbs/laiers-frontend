@@ -87,16 +87,23 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    # Environment
    ENVIRONMENT=development
    
-   # Google Cloud - REQUIRED for ADK
+   # Google Cloud - REQUIRED for ADK/Vertex AI
    GOOGLE_CLOUD_PROJECT=your-project-id
    GOOGLE_CLOUD_LOCATION=us-central1
    GOOGLE_GENAI_USE_VERTEXAI=true
    
-   # Firebase
+   # Firebase Authentication
+   # DEVELOPMENT: Use JSON service account file
    FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
+   
+   # PRODUCTION: Use Application Default Credentials (no file needed)
    
    # ADK Configuration (optional)
    ADK_BUCKET_NAME=your-bucket-name
+   
+   # Cloud Run Deployment (set automatically in production)
+   PORT=8080
+   MAINTENANCE_MODE=false
    ```
 
 6. **Verify Setup:**
@@ -147,18 +154,27 @@ Once the application is running, you can access these different interfaces:
 - **Login**: `http://localhost:8000/login`
 - **Dashboard**: `http://localhost:8000/dashboard` - Main user interface with AI chat assistant
 
+### Opportunity Management (NEW FEATURE)
+- **Company Portal**: `http://localhost:8000/company/{company_id}` - Company page with opportunities list
+- **Create Opportunity**: `http://localhost:8000/company/{company_id}/opportunities/create` - AI-guided job creation
+- **Browse Opportunities**: `http://localhost:8000/opportunities` - All available jobs (talent users)
+- **Opportunity Details**: `http://localhost:8000/opportunities/{opportunity_id}` - Job details + application form
+
 ### Development & Debugging
 - **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` - Google ADK development interface for testing agents
 - **API Documentation**: `http://localhost:8000/adk/docs` - ADK API documentation
 - **Setup Test**: `http://localhost:8000/test/adk-complete-flow` - Verify ADK configuration
 - **Debug Info**: `http://localhost:8000/debug/adk` - Agent configuration and status
 - **Health Check**: `http://localhost:8000/health` - Application health status
+- **Test Opportunities**: `http://localhost:8000/test/opportunities/{company_id}` - Debug opportunities data
 
 ### API Endpoints
 - **Chat with Agent**: `POST /api/chat` - HTMX endpoint for chat interface
 - **User Registration**: `POST /api/register` - Firebase registration endpoint
 - **User Login**: `POST /api/login` - Firebase login endpoint
 - **Logout**: `POST /api/logout` - User logout endpoint
+- **Create Opportunity**: `POST /api/opportunities/create` - HTMX endpoint for AI-guided creation
+- **Apply to Job**: `POST /api/opportunities/{opportunity_id}/apply` - Submit job application
 
 ## Project Architecture
 
@@ -179,6 +195,18 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
    - Right: AI chat assistant powered by ADK agent
 4. **Agent Interaction** - Context-aware conversations based on user type (talent vs company)
 
+#### Company User Flow (NEW)
+5. **Company Portal** - Access company page from dashboard
+6. **Create Opportunities** - AI-guided job posting through chat interface
+7. **Manage Opportunities** - View and manage posted jobs
+8. **Review Applications** - View candidate applications (future feature)
+
+#### Talent User Flow (NEW)
+5. **Browse Opportunities** - Discover available jobs from dashboard
+6. **View Job Details** - See complete job descriptions and requirements
+7. **Apply to Jobs** - Complete custom survey applications
+8. **Track Applications** - View application status (future feature)
+
 ### Technical Architecture
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
@@ -198,6 +226,49 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
                        │ • LLM Interface  │
                        └──────────────────┘
 ```
+
+## Opportunity Management System
+
+The application includes a complete job opportunity management system that allows companies to create job postings through AI-guided conversations and enables talent users to discover and apply to opportunities.
+
+### Key Features
+
+#### For Company Users:
+- **AI-Guided Job Creation**: Chat with the AI agent to create structured job postings
+- **Company Portal**: Dedicated page showing all company opportunities
+- **Automatic Publishing**: AI determines when job details are complete and auto-publishes
+- **Survey Generation**: AI creates custom application questions for each job
+
+#### For Talent Users:
+- **Opportunity Discovery**: Browse all available jobs in a clean, searchable interface
+- **Detailed Job Views**: See complete job descriptions, requirements, and company info
+- **Custom Applications**: Complete personalized survey applications for each job
+- **Application Tracking**: View application status and history
+
+### Data Structure
+
+The system uses Firestore collections:
+
+- **opportunities**: Job postings with company info, requirements, and survey questions
+- **applications**: User applications with survey responses and metadata
+- **users**: Extended with company affiliations and profile data
+
+### AI Integration
+
+The ADK agent handles opportunity creation through structured conversations:
+1. **Job Title & Description**: AI guides users through basic job details
+2. **Requirements & Qualifications**: Collects necessary skills and experience
+3. **Logistics**: Location, employment type, salary information
+4. **Survey Questions**: AI generates 3-5 relevant application questions
+5. **Auto-Publishing**: When complete, opportunity is automatically created
+
+### Technical Implementation
+
+- **HTMX-Powered**: Dynamic forms and real-time updates without page refreshes
+- **Responsive Design**: Mobile-friendly interfaces for all opportunity pages
+- **Component-Based**: Reusable templates for opportunity cards and forms
+- **Error Handling**: Graceful fallbacks and user-friendly error messages
+- **Performance Optimized**: Efficient Firestore queries with client-side sorting
 
 ## Development
 
@@ -233,6 +304,8 @@ You can test the AI agent in multiple ways:
 2. **Custom Chat Interface**: Use the dashboard at `http://localhost:8000/dashboard` after logging in
 3. **ADK Dev UI**: Use the development interface at `http://localhost:8000/adk/dev-ui/`
 4. **Direct API**: Make POST requests to `/adk/run` with proper payload
+5. **Opportunity Creation**: Test AI-guided job creation at `/company/{company_id}/opportunities/create`
+6. **Opportunity Testing**: Debug opportunities data at `/test/opportunities/{company_id}`
 
 ### Firebase Configuration Files
 
@@ -272,7 +345,9 @@ laiers/
 │   └── agent.py               # Job matching agent definition (root_agent variable)
 ├── utils/                     # Utility modules
 │   ├── __init__.py
-│   ├── firestore.py           # Firestore database operations
+│   ├── firestore.py           # Firestore database operations + opportunity management
+│   ├── auth.py                # Firebase authentication helpers
+│   ├── middleware.py          # Maintenance mode middleware
 │   └── models.py              # Pydantic data models
 ├── templates/                 # Jinja2 templates
 │   ├── base.html             # Base template
@@ -280,19 +355,33 @@ laiers/
 │   ├── register.html         # Registration page
 │   ├── login.html            # Login page
 │   ├── dashboard.html        # Main dashboard with chat
+│   ├── company.html          # Company portal with opportunities list
+│   ├── opportunities_list.html # Browse all opportunities (talent users)
+│   ├── create_opportunity.html # AI-guided opportunity creation
+│   ├── opportunity_detail.html # Job details + application form
 │   └── components/           # Reusable components
 │       ├── chat_message.html # Chat message component
-│       └── chat_error.html   # Chat error component
+│       ├── chat_error.html   # Chat error component
+│       ├── opportunity_card.html # Opportunity display card
+│       └── survey_form.html  # Application survey form
 ├── static/                   # Static assets
 │   └── css/
 │       └── styles.css        # Application styles
 ├── config/                   # Configuration files
 │   ├── firebase-credentials.json      # Firebase service account (excluded from git)
 │   └── firebase-web-config.json       # Firebase web config
-├── .env                      # Environment variables (excluded from git)
-├── .env.example             # Environment template
-├── pyproject.toml           # UV project configuration
-└── README.md               # This file
+├── deployment/              # Cloud Run deployment system
+│   ├── deploy.sh            # Full-featured deployment script
+│   ├── quick-deploy.sh      # Quick deployment commands
+│   ├── README.md            # Comprehensive deployment guide
+│   └── cloudbuild.yaml      # Cloud Build configuration
+├── Dockerfile               # Container configuration for Cloud Run
+├── .dockerignore           # Files excluded from container build
+├── run.py                  # Entry point for Cloud Run deployment
+├── .env                    # Environment variables (excluded from git)
+├── .env.example           # Environment template
+├── pyproject.toml         # UV project configuration
+└── README.md             # This file
 ```
 
 ## Troubleshooting
@@ -347,6 +436,7 @@ Expected test result:
 **Symptoms:**
 - Login/registration fails
 - "Firebase not initialized" errors
+- Opportunity creation/retrieval fails
 
 **Solutions:**
 ```bash
@@ -364,6 +454,10 @@ with open('config/firebase-credentials.json') as f:
     print('Project ID:', data.get('project_id'))
     print('Client Email:', data.get('client_email'))
 "
+
+# Test Firestore collections (opportunities feature)
+# Ensure Firestore is in test mode or has proper security rules
+# Collections used: users, opportunities, applications
 ```
 
 #### 4. Environment Variable Issues
@@ -373,10 +467,15 @@ with open('config/firebase-credentials.json') as f:
 # CORRECT (use these):
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_GENAI_USE_VERTEXAI=true
 
-# INCORRECT (don't use these):
+# INCORRECT (don't use these - these are outdated):
 # VERTEX_AI_LOCATION=us-central1
 # GCP_PROJECT=your-project-id
+
+# NEW: Deployment variables (set automatically in Cloud Run)
+PORT=8080
+MAINTENANCE_MODE=false
 ```
 
 ### Debug Endpoints
@@ -499,13 +598,145 @@ If you want to avoid Google Cloud costs during development, you can use Google A
 
 ## Deployment
 
-This application is designed for deployment on Google Cloud Run. The deployment process will be documented separately once the development setup is complete.
+The application is production-ready and can be deployed to Google Cloud Run with a complete maintenance mode system for safe deployments.
 
-Key deployment considerations:
-- Use Vertex AI for production (not Google AI Studio)
-- Configure proper IAM roles for Cloud Run service account
-- Set production environment variables
-- Enable necessary APIs in production project
+### 🔄 Local vs Cloud Run Comparison
+
+| Aspect | Local Development (`uv run main.py`) | Cloud Run Production |
+|--------|--------------------------------------|---------------------|
+| **Command** | `uv run main.py` | Dockerfile + `uv run uvicorn` |
+| **Port** | 8000 (hardcoded) | 8080 (from PORT env var) |
+| **Firebase Auth** | JSON file (`config/firebase-credentials.json`) | Application Default Credentials |
+| **Environment** | `.env` file | Cloud Run environment variables |
+| **CORS** | Enabled (`allow_origins=["*"]`) | Disabled for security |
+| **Logging** | DEBUG level | INFO level |
+| **Configuration** | Development settings | Production optimized |
+| **Cost** | Free (your machine) | Pay-per-request |
+| **Scaling** | Single instance | Auto-scaling (0-10 instances) |
+
+### 🚀 Quick Deployment
+
+**Prerequisites:**
+```bash
+# Set your project ID
+export GOOGLE_CLOUD_PROJECT=your-project-id
+
+# Ensure you're authenticated
+gcloud auth login
+gcloud auth application-default login
+```
+
+**Deploy in 3 Commands:**
+```bash
+# 1. Deploy in maintenance mode (safe)
+./deployment/quick-deploy.sh deploy
+
+# 2. Test the deployment
+curl "$(./deployment/quick-deploy.sh url)/health"
+
+# 3. Make app live when ready
+./deployment/quick-deploy.sh live
+```
+
+### 🎯 Maintenance Mode System
+
+The deployment includes a maintenance mode feature that allows safe deployments:
+
+- **Deploy in maintenance mode**: Users see a professional "Coming Soon" page
+- **Test functionality**: Verify everything works before going live
+- **Instant toggle**: Switch between maintenance/live with single command
+- **Health checks always work**: Monitoring endpoints remain accessible
+- **Cost-effective**: No need for separate staging environments
+
+### 📋 Deployment Commands
+
+**Quick Operations:**
+```bash
+./deployment/quick-deploy.sh deploy      # Deploy in maintenance mode
+./deployment/quick-deploy.sh live        # Make app live
+./deployment/quick-deploy.sh maintenance # Back to maintenance mode
+./deployment/quick-deploy.sh url         # Get service URL
+./deployment/quick-deploy.sh logs        # View recent logs
+```
+
+**Full-Featured Operations:**
+```bash
+./deployment/deploy.sh deploy            # Deploy with full options
+./deployment/deploy.sh deploy-live       # Deploy live immediately
+./deployment/deploy.sh maintenance-on    # Enable maintenance mode
+./deployment/deploy.sh maintenance-off   # Disable maintenance mode
+./deployment/deploy.sh status            # Detailed service status
+./deployment/deploy.sh logs              # Comprehensive logs
+```
+
+### 🌍 Production Environment Variables
+
+The deployment automatically sets these environment variables:
+
+```bash
+ENVIRONMENT=production
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_GENAI_USE_VERTEXAI=true
+MAINTENANCE_MODE=false
+PORT=8080  # Set automatically by Cloud Run
+```
+
+### 🔒 Production Firebase Configuration
+
+In production, the app uses **Application Default Credentials** instead of JSON files:
+
+- **More secure**: No embedded credentials in containers
+- **Automatic authentication**: Cloud Run provides credentials automatically
+- **Easy management**: Rotate credentials through Google Cloud Console
+
+### 📊 Cost Optimization
+
+The deployment is optimized for cost-effectiveness:
+
+- **Pay-per-request**: No traffic = no cost
+- **Auto-scaling to zero**: Scales down when idle
+- **Free tier**: Up to 2M requests/month included
+- **Optimized resources**: 1Gi memory, efficient container
+
+### 🔧 Troubleshooting Deployment
+
+**Common Issues:**
+
+1. **Project ID vs Project Number**: Use project ID (string), not project number (numeric)
+2. **API Enablement**: Ensure Vertex AI and Cloud Run APIs are enabled
+3. **Authentication**: Run `gcloud auth application-default login`
+4. **Environment Variables**: Use `GOOGLE_CLOUD_LOCATION` not `VERTEX_AI_LOCATION`
+
+**Debug Commands:**
+```bash
+# Check deployment status
+./deployment/deploy.sh status
+
+# View recent logs
+./deployment/deploy.sh logs
+
+# Test health endpoint
+curl "$(./deployment/quick-deploy.sh url)/health"
+```
+
+### 📖 Complete Deployment Guide
+
+See `deployment/README.md` for comprehensive deployment documentation including:
+- Detailed setup instructions
+- Firebase credentials configuration
+- Manual deployment commands
+- Monitoring and debugging
+- Cost optimization strategies
+
+### 🚦 Recommended Deployment Workflow
+
+1. **Deploy in maintenance mode** → `./deployment/quick-deploy.sh deploy`
+2. **Test the deployment** → Verify health checks and functionality
+3. **Make live** → `./deployment/quick-deploy.sh live`
+4. **Monitor** → Check logs and metrics
+
+This approach ensures zero-downtime deployments and safe rollbacks.
 
 ## Contributing
 

@@ -5,41 +5,84 @@
 {% block content %}
 <div class="auth-container">
     <div class="auth-form">
-        <h2>Sign Up as {{ user_type | title }}</h2>
+        <h2>Create Account</h2>
+        
+        <div class="user-type-selector">
+            <button 
+                class="user-type-btn {% if user_type == 'talent' %}active{% endif %}"
+                hx-get="/api/form-fields/talent"
+                hx-target="#form-fields"
+                hx-trigger="click"
+            >I'm Looking for Work</button>
+            
+            <button 
+                class="user-type-btn {% if user_type == 'company' %}active{% endif %}"
+                hx-get="/api/form-fields/company"
+                hx-target="#form-fields"
+                hx-trigger="click"
+            >I'm Hiring</button>
+        </div>
         
         <form 
-            hx-post="/api/auth/register" 
+            hx-post="/api/register" 
             hx-target="#auth-result"
             hx-swap="innerHTML"
+            onsubmit="return validateForm()"
         >
-            <input type="hidden" name="user_type" value="{{ user_type }}">
-            
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" name="email" required>
+            <div id="form-fields">
+                {% if user_type == 'company' %}
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required minlength="6">
+                        <small class="form-text">Password must be at least 6 characters long</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm Password</label>
+                        <input type="password" id="confirm_password" name="confirm_password" required minlength="6">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="company_id">Select Your Company</label>
+                        <select name="company_id" required>
+                            <option value="">Choose a company...</option>
+                            <option value="company_1">Company_1</option>
+                            <option value="company_2">Company_2</option>
+                            <option value="company_3">Company_3</option>
+                        </select>
+                    </div>
+                    
+                    <input type="hidden" name="user_type" value="company">
+                {% else %}
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required minlength="6">
+                        <small class="form-text">Password must be at least 6 characters long</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm Password</label>
+                        <input type="password" id="confirm_password" name="confirm_password" required minlength="6">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="name">Full Name</label>
+                        <input type="text" name="name" required>
+                    </div>
+                    
+                    <input type="hidden" name="user_type" value="talent">
+                {% endif %}
             </div>
-            
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" name="password" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
-                <input type="password" name="confirm_password" required>
-            </div>
-            
-            {% if user_type == 'talent' %}
-            <div class="form-group">
-                <label for="name">Full Name</label>
-                <input type="text" name="name" required>
-            </div>
-            {% else %}
-            <div class="form-group">
-                <label for="company">Company Name</label>
-                <input type="text" name="company" required>
-            </div>
-            {% endif %}
             
             <button type="submit" class="btn-primary">Create Account</button>
         </form>
@@ -51,4 +94,34 @@
         </p>
     </div>
 </div>
+
+<script>
+function validateForm() {
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+    const resultDiv = document.getElementById('auth-result');
+    
+    if (password.length < 6) {
+        resultDiv.innerHTML = `
+            <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>❌ Password Error</strong></p>
+                <p>Password must be at least 6 characters long</p>
+            </div>
+        `;
+        return false;
+    }
+    
+    if (password !== confirmPassword) {
+        resultDiv.innerHTML = `
+            <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>❌ Password Error</strong></p>
+                <p>Passwords do not match</p>
+            </div>
+        `;
+        return false;
+    }
+    
+    return true;
+}
+</script>
 {% endblock %} 

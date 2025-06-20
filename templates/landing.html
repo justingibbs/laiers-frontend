@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Matching App</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -86,6 +85,29 @@
             border-color: #007bff;
             background: #e6f3ff;
         }
+        
+        /* HTMX loading states */
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .htmx-request .htmx-indicator {
+            opacity: 1;
+        }
+        
+        .htmx-request.htmx-indicator {
+            opacity: 1;
+        }
+        
+        /* Smooth transitions for form field swapping */
+        #form-fields {
+            transition: opacity 0.2s ease;
+        }
+        
+        .htmx-swapping #form-fields {
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -94,154 +116,90 @@
         
         <div class="auth-form">
             <div class="user-type-selector">
-                <button class="user-type-btn selected" data-type="talent">I'm Looking for Work</button>
-                <button class="user-type-btn" data-type="company">I'm Hiring</button>
+                <button class="user-type-btn selected" 
+                        hx-get="/api/form-fields/talent" 
+                        hx-target="#form-fields" 
+                        hx-swap="innerHTML"
+                        onclick="document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected')); this.classList.add('selected');">
+                    I'm Looking for Work
+                </button>
+                <button class="user-type-btn" 
+                        hx-get="/api/form-fields/company" 
+                        hx-target="#form-fields" 
+                        hx-swap="innerHTML"
+                        onclick="document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected')); this.classList.add('selected');">
+                    I'm Hiring
+                </button>
             </div>
             
-            <form id="auth-form">
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
+            <form hx-post="/api/register" 
+                  hx-target="#auth-result" 
+                  hx-swap="innerHTML"
+                  hx-indicator="#loading">
+                <div id="form-fields">
+                    <!-- Default talent form fields -->
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm Password</label>
+                        <input type="password" id="confirm_password" name="confirm_password" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="name">Full Name</label>
+                        <input type="text" name="name" required>
+                    </div>
+                    
+                    <input type="hidden" name="user_type" value="talent">
                 </div>
                 
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                
-                <button type="submit" id="submit-btn">Sign In</button>
-                <button type="button" id="register-btn" style="background-color: #28a745;">Create Account</button>
+                <button type="submit" style="background-color: #28a745;">
+                    Create Account
+                    <span id="loading" class="htmx-indicator" style="margin-left: 0.5rem;">...</span>
+                </button>
             </form>
             
             <div id="auth-result"></div>
+            
+            <p>Already have an account? 
+                <a href="/login">Sign in here</a>
+            </p>
         </div>
     </div>
 
     <script>
-        // Initialize Firebase
-        const firebaseConfig = {
-            apiKey: "{{ firebase_config.apiKey }}",
-            authDomain: "{{ firebase_config.authDomain }}",
-            projectId: "{{ firebase_config.projectId }}",
-            storageBucket: "{{ firebase_config.storageBucket }}",
-            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
-            appId: "{{ firebase_config.appId }}"
-        };
-        firebase.initializeApp(firebaseConfig);
+        // HTMX handles most interactions, minimal JavaScript needed
         
-        let selectedUserType = 'talent';
-        
-        // User type selection
-        document.querySelectorAll('.user-type-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                selectedUserType = btn.dataset.type;
-            });
-        });
-        
-        // Handle registration
-        document.getElementById('register-btn').addEventListener('click', async () => {
-            const email = document.getElementById('email').value.trim();
-            const password = document.getElementById('password').value;
-            const authResult = document.getElementById('auth-result');
-            
-            // Clear previous errors
-            authResult.innerHTML = '';
-            
-            // Validate email format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                authResult.innerHTML = `<div class="error">Please enter a valid email address</div>`;
-                return;
-            }
-            
-            // Validate password length
-            if (password.length < 6) {
-                authResult.innerHTML = `<div class="error">Password must be at least 6 characters long</div>`;
-                return;
-            }
-            
-            try {
-                const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
-                const idToken = await userCredential.user.getIdToken();
-                
-                const response = await fetch('/api/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ 
-                        idToken,
-                        userType: selectedUserType,
-                        email
-                    })
-                });
-                
-                if (response.ok) {
-                    window.location.href = '/dashboard';
-                } else {
-                    const error = await response.json();
-                    authResult.innerHTML = `<div class="error">${error.detail}</div>`;
+        // Clear form when switching user types to avoid stale data
+        document.body.addEventListener('htmx:afterSwap', function(event) {
+            if (event.detail.target.id === 'form-fields') {
+                // Form fields changed, clear any previous results
+                const authResult = document.getElementById('auth-result');
+                if (authResult) {
+                    authResult.innerHTML = '';
                 }
-            } catch (error) {
-                let errorMessage = error.message;
-                // Make Firebase error messages more user-friendly
-                if (error.code === 'auth/email-already-in-use') {
-                    errorMessage = 'This email is already registered. Please try logging in instead.';
-                } else if (error.code === 'auth/invalid-email') {
-                    errorMessage = 'Please enter a valid email address.';
-                } else if (error.code === 'auth/weak-password') {
-                    errorMessage = 'Password should be at least 6 characters long.';
-                }
-                authResult.innerHTML = `<div class="error">${errorMessage}</div>`;
             }
         });
         
-        // Handle form submission (login)
-        document.getElementById('auth-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('email').value.trim();
-            const password = document.getElementById('password').value;
-            const authResult = document.getElementById('auth-result');
-            
-            // Clear previous errors
-            authResult.innerHTML = '';
-            
-            // Validate email format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                authResult.innerHTML = `<div class="error">Please enter a valid email address</div>`;
-                return;
-            }
-            
-            try {
-                const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
-                const idToken = await userCredential.user.getIdToken();
-                
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ idToken })
-                });
-                
-                if (response.ok) {
-                    window.location.href = '/dashboard';
-                } else {
-                    const error = await response.json();
-                    authResult.innerHTML = `<div class="error">${error.detail}</div>`;
+        // Handle successful registration
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            if (event.detail.xhr.status === 200 && event.detail.elt.matches('form')) {
+                const response = event.detail.xhr.responseText;
+                // If response contains success message, show it
+                if (response.includes('✅ Registration Successful')) {
+                    // Form was successfully submitted, could redirect or show success
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 2000);
                 }
-            } catch (error) {
-                let errorMessage = error.message;
-                // Make Firebase error messages more user-friendly
-                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-                    errorMessage = 'Invalid email or password. Please try again.';
-                } else if (error.code === 'auth/invalid-email') {
-                    errorMessage = 'Please enter a valid email address.';
-                }
-                authResult.innerHTML = `<div class="error">${errorMessage}</div>`;
             }
         });
     </script>

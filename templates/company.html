@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+
+{% block title %}{{ company.name }} - Job Matching App{% endblock %}
+
+{% block extra_head %}
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f5f5f5;
+    }
+    
+    .company-header {
+        background-color: #fff;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .company-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .back-link {
+        background-color: #1976d2;
+        color: white;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.25rem;
+    }
+    
+    .back-link:hover {
+        background-color: #1565c0;
+    }
+    
+    .content {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+    
+    .company-card, .team-card {
+        background-color: white;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        height: fit-content;
+    }
+    
+    .company-title, .team-title {
+        color: #333;
+        margin-bottom: 1rem;
+    }
+    
+    .company-description {
+        color: #666;
+        margin-bottom: 1.5rem;
+        line-height: 1.5;
+    }
+    
+    .company-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-top: 1.5rem;
+    }
+    
+    .stat-card {
+        background-color: #f5f5f5;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        text-align: center;
+    }
+    
+    .stat-number {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #1976d2;
+    }
+    
+    .stat-label {
+        color: #666;
+        font-size: 0.875rem;
+    }
+    
+    .team-member {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        border: 1px solid #eee;
+        border-radius: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .member-avatar {
+        width: 40px;
+        height: 40px;
+        background-color: #1976d2;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+    }
+    
+    .member-info {
+        flex: 1;
+    }
+    
+    .member-name {
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+    }
+    
+    .member-email {
+        color: #666;
+        font-size: 0.875rem;
+    }
+    
+    .opportunities-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    
+    .create-opportunity-btn {
+        background-color: #4caf50;
+        color: white;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.25rem;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    
+    .create-opportunity-btn:hover {
+        background-color: #45a049;
+    }
+    
+    .opportunity-card {
+        border: 1px solid #eee;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background-color: #fff;
+        transition: box-shadow 0.2s;
+    }
+    
+    .opportunity-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .opportunity-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.5rem;
+        font-size: 1.1rem;
+    }
+    
+    .opportunity-meta {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.875rem;
+        color: #666;
+    }
+    
+    .opportunity-description {
+        color: #555;
+        line-height: 1.4;
+        margin-bottom: 1rem;
+    }
+    
+    .opportunity-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .view-opportunity-btn {
+        background-color: #1976d2;
+        color: white;
+        text-decoration: none;
+        padding: 0.4rem 0.8rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    .view-opportunity-btn:hover {
+        background-color: #1565c0;
+    }
+    
+    .no-opportunities {
+        text-align: center;
+        padding: 2rem;
+        color: #666;
+        background-color: #f9f9f9;
+        border-radius: 0.5rem;
+        border: 2px dashed #ddd;
+    }
+    
+    @media (max-width: 768px) {
+        .content {
+            grid-template-columns: 1fr;
+        }
+        
+        .opportunities-header {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="company-header">
+    <div class="company-info">
+        <h1>{{ company.name }}</h1>
+        <span class="company-badge">Company Portal</span>
+    </div>
+    <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+</div>
+
+<div class="content">
+    <!-- Company Information Panel -->
+    <div class="company-card">
+        <h2 class="company-title">Company Information</h2>
+        
+        <div class="company-description">
+            {{ company.description }}
+        </div>
+        
+        <div class="company-stats">
+            <div class="stat-card">
+                <div class="stat-number">{{ company.user_count }}</div>
+                <div class="stat-label">Team Members</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ opportunities|length }}</div>
+                <div class="stat-label">Job Opportunities</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+            <h3>Company Details</h3>
+            <div style="display: grid; gap: 0.5rem;">
+                <div><strong>Company ID:</strong> {{ company.id }}</div>
+                <div><strong>Company Name:</strong> {{ company.name }}</div>
+                <div><strong>Your Role:</strong> Company Representative</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Team Members Panel -->
+    <div class="team-card">
+        <div class="opportunities-header">
+            <h2 class="team-title">Job Opportunities ({{ opportunities|length }})</h2>
+            <a href="/company/{{ company.id }}/opportunities/create" class="create-opportunity-btn">
+                + Create New Opportunity
+            </a>
+        </div>
+        
+        {% if opportunities %}
+            {% for opportunity in opportunities %}
+            <div class="opportunity-card">
+                <div class="opportunity-title">
+                    {{ opportunity.title }}
+                </div>
+                <div class="opportunity-meta">
+                    <span>📍 {{ opportunity.location or 'Remote' }}</span>
+                    <span>💼 {{ opportunity.employment_type or 'Full-time' }}</span>
+                    <span>📅 {{ opportunity.created_at.strftime('%m/%d/%Y') if opportunity.created_at else 'Recently' }}</span>
+                </div>
+                <div class="opportunity-description">
+                    {{ opportunity.description[:150] }}{% if opportunity.description|length > 150 %}...{% endif %}
+                </div>
+                <div class="opportunity-actions">
+                    <a href="/opportunities/{{ opportunity.id }}" class="view-opportunity-btn">
+                        View Details
+                    </a>
+                    {% if opportunity.survey_questions %}
+                    <span style="font-size: 0.875rem; color: #666; padding: 0.4rem 0;">
+                        {{ opportunity.survey_questions|length }} survey questions
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="no-opportunities">
+                <p><strong>No Job Opportunities Yet</strong></p>
+                <p>Start creating opportunities to attract top talent!</p>
+                <a href="/company/{{ company.id }}/opportunities/create" class="create-opportunity-btn" style="display: inline-block; margin-top: 1rem;">
+                    Create Your First Opportunity
+                </a>
+            </div>
+        {% endif %}
+        
+        <!-- Team Summary -->
+        <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #eee;">
+            <h3 style="color: #666; font-size: 1rem; margin-bottom: 0.5rem;">Team Overview</h3>
+            <div style="color: #888; font-size: 0.875rem;">
+                {{ company.user_count }} team member{{ 's' if company.user_count != 1 else '' }} from {{ company.name }}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

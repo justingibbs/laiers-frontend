@@ -7,19 +7,15 @@
     <div class="auth-form">
         <h2>Sign In</h2>
         
-        <form 
-            hx-post="/api/auth/login" 
-            hx-target="#auth-result"
-            hx-swap="innerHTML"
-        >
+        <form id="login-form">
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" name="email" required>
+                <input type="email" id="email" name="email" required>
             </div>
             
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" name="password" required>
+                <input type="password" id="password" name="password" required>
             </div>
             
             <button type="submit" class="btn-primary">Sign In</button>
@@ -32,4 +28,57 @@
         </p>
     </div>
 </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+    // Initialize Firebase
+    const firebaseConfig = {{ firebase_config | tojson }};
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    // Handle form submission
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const resultDiv = document.getElementById('auth-result');
+
+        try {
+            // Sign in with Firebase
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const idToken = await userCredential.user.getIdToken();
+
+            // Send token to backend
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ idToken })
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+                window.location.href = data.redirect;
+            } else {
+                resultDiv.innerHTML = `
+                    <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                        <p><strong>❌ Login Failed</strong></p>
+                        <p>${data.detail || 'Please try again.'}</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Login Failed</strong></p>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+    });
+</script>
 {% endblock %} 
