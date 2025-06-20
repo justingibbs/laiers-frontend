@@ -2,6 +2,9 @@
 
 This guide covers deploying your FastAPI + Google ADK application to Google Cloud Run with maintenance mode support.
 
+Cloud URL:
+https://job-matching-app-215827770748.us-central1.run.app/
+
 ## 🚀 Quick Start
 
 ### Prerequisites
