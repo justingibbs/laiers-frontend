@@ -600,6 +600,20 @@ If you want to avoid Google Cloud costs during development, you can use Google A
 
 The application is production-ready and can be deployed to Google Cloud Run with a complete maintenance mode system for safe deployments.
 
+### 🔄 Local vs Cloud Run Comparison
+
+| Aspect | Local Development (`uv run main.py`) | Cloud Run Production |
+|--------|--------------------------------------|---------------------|
+| **Command** | `uv run main.py` | Dockerfile + `uv run uvicorn` |
+| **Port** | 8000 (hardcoded) | 8080 (from PORT env var) |
+| **Firebase Auth** | JSON file (`config/firebase-credentials.json`) | Application Default Credentials |
+| **Environment** | `.env` file | Cloud Run environment variables |
+| **CORS** | Enabled (`allow_origins=["*"]`) | Disabled for security |
+| **Logging** | DEBUG level | INFO level |
+| **Configuration** | Development settings | Production optimized |
+| **Cost** | Free (your machine) | Pay-per-request |
+| **Scaling** | Single instance | Auto-scaling (0-10 instances) |
+
 ### 🚀 Quick Deployment
 
 **Prerequisites:**
