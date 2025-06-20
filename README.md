@@ -87,16 +87,23 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    # Environment
    ENVIRONMENT=development
    
-   # Google Cloud - REQUIRED for ADK
+   # Google Cloud - REQUIRED for ADK/Vertex AI
    GOOGLE_CLOUD_PROJECT=your-project-id
    GOOGLE_CLOUD_LOCATION=us-central1
    GOOGLE_GENAI_USE_VERTEXAI=true
    
-   # Firebase
+   # Firebase Authentication
+   # DEVELOPMENT: Use JSON service account file
    FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
+   
+   # PRODUCTION: Use Application Default Credentials (no file needed)
    
    # ADK Configuration (optional)
    ADK_BUCKET_NAME=your-bucket-name
+   
+   # Cloud Run Deployment (set automatically in production)
+   PORT=8080
+   MAINTENANCE_MODE=false
    ```
 
 6. **Verify Setup:**
@@ -340,6 +347,7 @@ laiers/
 │   ├── __init__.py
 │   ├── firestore.py           # Firestore database operations + opportunity management
 │   ├── auth.py                # Firebase authentication helpers
+│   ├── middleware.py          # Maintenance mode middleware
 │   └── models.py              # Pydantic data models
 ├── templates/                 # Jinja2 templates
 │   ├── base.html             # Base template
@@ -362,10 +370,18 @@ laiers/
 ├── config/                   # Configuration files
 │   ├── firebase-credentials.json      # Firebase service account (excluded from git)
 │   └── firebase-web-config.json       # Firebase web config
-├── .env                      # Environment variables (excluded from git)
-├── .env.example             # Environment template
-├── pyproject.toml           # UV project configuration
-└── README.md               # This file
+├── deployment/              # Cloud Run deployment system
+│   ├── deploy.sh            # Full-featured deployment script
+│   ├── quick-deploy.sh      # Quick deployment commands
+│   ├── README.md            # Comprehensive deployment guide
+│   └── cloudbuild.yaml      # Cloud Build configuration
+├── Dockerfile               # Container configuration for Cloud Run
+├── .dockerignore           # Files excluded from container build
+├── run.py                  # Entry point for Cloud Run deployment
+├── .env                    # Environment variables (excluded from git)
+├── .env.example           # Environment template
+├── pyproject.toml         # UV project configuration
+└── README.md             # This file
 ```
 
 ## Troubleshooting
@@ -451,10 +467,15 @@ with open('config/firebase-credentials.json') as f:
 # CORRECT (use these):
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_GENAI_USE_VERTEXAI=true
 
-# INCORRECT (don't use these):
+# INCORRECT (don't use these - these are outdated):
 # VERTEX_AI_LOCATION=us-central1
 # GCP_PROJECT=your-project-id
+
+# NEW: Deployment variables (set automatically in Cloud Run)
+PORT=8080
+MAINTENANCE_MODE=false
 ```
 
 ### Debug Endpoints
@@ -577,13 +598,131 @@ If you want to avoid Google Cloud costs during development, you can use Google A
 
 ## Deployment
 
-This application is designed for deployment on Google Cloud Run. The deployment process will be documented separately once the development setup is complete.
+The application is production-ready and can be deployed to Google Cloud Run with a complete maintenance mode system for safe deployments.
 
-Key deployment considerations:
-- Use Vertex AI for production (not Google AI Studio)
-- Configure proper IAM roles for Cloud Run service account
-- Set production environment variables
-- Enable necessary APIs in production project
+### 🚀 Quick Deployment
+
+**Prerequisites:**
+```bash
+# Set your project ID
+export GOOGLE_CLOUD_PROJECT=your-project-id
+
+# Ensure you're authenticated
+gcloud auth login
+gcloud auth application-default login
+```
+
+**Deploy in 3 Commands:**
+```bash
+# 1. Deploy in maintenance mode (safe)
+./deployment/quick-deploy.sh deploy
+
+# 2. Test the deployment
+curl "$(./deployment/quick-deploy.sh url)/health"
+
+# 3. Make app live when ready
+./deployment/quick-deploy.sh live
+```
+
+### 🎯 Maintenance Mode System
+
+The deployment includes a maintenance mode feature that allows safe deployments:
+
+- **Deploy in maintenance mode**: Users see a professional "Coming Soon" page
+- **Test functionality**: Verify everything works before going live
+- **Instant toggle**: Switch between maintenance/live with single command
+- **Health checks always work**: Monitoring endpoints remain accessible
+- **Cost-effective**: No need for separate staging environments
+
+### 📋 Deployment Commands
+
+**Quick Operations:**
+```bash
+./deployment/quick-deploy.sh deploy      # Deploy in maintenance mode
+./deployment/quick-deploy.sh live        # Make app live
+./deployment/quick-deploy.sh maintenance # Back to maintenance mode
+./deployment/quick-deploy.sh url         # Get service URL
+./deployment/quick-deploy.sh logs        # View recent logs
+```
+
+**Full-Featured Operations:**
+```bash
+./deployment/deploy.sh deploy            # Deploy with full options
+./deployment/deploy.sh deploy-live       # Deploy live immediately
+./deployment/deploy.sh maintenance-on    # Enable maintenance mode
+./deployment/deploy.sh maintenance-off   # Disable maintenance mode
+./deployment/deploy.sh status            # Detailed service status
+./deployment/deploy.sh logs              # Comprehensive logs
+```
+
+### 🌍 Production Environment Variables
+
+The deployment automatically sets these environment variables:
+
+```bash
+ENVIRONMENT=production
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_GENAI_USE_VERTEXAI=true
+MAINTENANCE_MODE=false
+PORT=8080  # Set automatically by Cloud Run
+```
+
+### 🔒 Production Firebase Configuration
+
+In production, the app uses **Application Default Credentials** instead of JSON files:
+
+- **More secure**: No embedded credentials in containers
+- **Automatic authentication**: Cloud Run provides credentials automatically
+- **Easy management**: Rotate credentials through Google Cloud Console
+
+### 📊 Cost Optimization
+
+The deployment is optimized for cost-effectiveness:
+
+- **Pay-per-request**: No traffic = no cost
+- **Auto-scaling to zero**: Scales down when idle
+- **Free tier**: Up to 2M requests/month included
+- **Optimized resources**: 1Gi memory, efficient container
+
+### 🔧 Troubleshooting Deployment
+
+**Common Issues:**
+
+1. **Project ID vs Project Number**: Use project ID (string), not project number (numeric)
+2. **API Enablement**: Ensure Vertex AI and Cloud Run APIs are enabled
+3. **Authentication**: Run `gcloud auth application-default login`
+4. **Environment Variables**: Use `GOOGLE_CLOUD_LOCATION` not `VERTEX_AI_LOCATION`
+
+**Debug Commands:**
+```bash
+# Check deployment status
+./deployment/deploy.sh status
+
+# View recent logs
+./deployment/deploy.sh logs
+
+# Test health endpoint
+curl "$(./deployment/quick-deploy.sh url)/health"
+```
+
+### 📖 Complete Deployment Guide
+
+See `deployment/README.md` for comprehensive deployment documentation including:
+- Detailed setup instructions
+- Firebase credentials configuration
+- Manual deployment commands
+- Monitoring and debugging
+- Cost optimization strategies
+
+### 🚦 Recommended Deployment Workflow
+
+1. **Deploy in maintenance mode** → `./deployment/quick-deploy.sh deploy`
+2. **Test the deployment** → Verify health checks and functionality
+3. **Make live** → `./deployment/quick-deploy.sh live`
+4. **Monitor** → Check logs and metrics
+
+This approach ensures zero-downtime deployments and safe rollbacks.
 
 ## Contributing
 

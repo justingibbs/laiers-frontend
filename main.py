@@ -48,20 +48,28 @@ def load_firebase_web_config():
         logger.error(f"Error parsing web config: {e}")
         return {}
 
-# Get project ID from web config
+# Get project ID from web config or environment
 web_config = load_firebase_web_config()
-PROJECT_ID = web_config.get('projectId')
+PROJECT_ID = web_config.get('projectId') or GOOGLE_CLOUD_PROJECT
 
 if not PROJECT_ID:
-    logger.error("Firebase project ID not found in web config")
-    raise ValueError("Firebase project ID not found in web config")
+    logger.error("Firebase project ID not found in web config or GOOGLE_CLOUD_PROJECT environment variable")
+    raise ValueError("Firebase project ID not found. Set GOOGLE_CLOUD_PROJECT environment variable.")
 
 logger.info(f"Using Firebase project ID: {PROJECT_ID}")
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
     try:
-        cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+        if ENVIRONMENT == "production":
+            # Use Application Default Credentials in production
+            cred = credentials.ApplicationDefault()
+            logger.info("Using Application Default Credentials for Firebase")
+        else:
+            # Use service account file in development
+            cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+            logger.info(f"Using service account file: {FIREBASE_CREDENTIALS_PATH}")
+        
         firebase_admin.initialize_app(cred, {'projectId': PROJECT_ID})
         logger.info("Firebase Admin SDK initialized successfully")
     except Exception as e:

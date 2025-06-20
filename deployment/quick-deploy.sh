@@ -15,30 +15,39 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
+# Validate that PROJECT_ID is not a number (project number)
+if [[ "$PROJECT_ID" =~ ^[0-9]+$ ]]; then
+    echo "❌ GOOGLE_CLOUD_PROJECT appears to be a project number ($PROJECT_ID)"
+    echo "Please use the project ID instead. Run: gcloud projects list"
+    echo "Then set: export GOOGLE_CLOUD_PROJECT=your-project-id"
+    exit 1
+fi
+
 case "${1:-help}" in
     "deploy")
         echo "🚀 Deploying in maintenance mode..."
         gcloud run deploy "$SERVICE_NAME" \
             --source . \
             --region "$REGION" \
-            --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_GENAI_USE_VERTEXAI=true,PORT=8080" \
+            --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_GENAI_USE_VERTEXAI=true" \
             --allow-unauthenticated \
             --memory=1Gi \
-            --max-instances=10
+            --max-instances=10 \
+            --port=8080
         echo "✅ Deployment complete - App is in maintenance mode"
         ;;
     "live")
         echo "🌟 Making app live..."
         gcloud run services update "$SERVICE_NAME" \
             --region "$REGION" \
-            --set-env-vars="MAINTENANCE_MODE=false"
+            --set-env-vars="MAINTENANCE_MODE=false,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_GENAI_USE_VERTEXAI=true"
         echo "✅ App is now live!"
         ;;
     "maintenance")
         echo "🔧 Enabling maintenance mode..."
         gcloud run services update "$SERVICE_NAME" \
             --region "$REGION" \
-            --set-env-vars="MAINTENANCE_MODE=true"
+            --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_GENAI_USE_VERTEXAI=true"
         echo "✅ Maintenance mode enabled"
         ;;
     "url")

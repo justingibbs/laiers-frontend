@@ -13,7 +13,6 @@ pip-delete-this-directory.txt
 
 # UV cache
 .uv-cache/
-uv.lock
 
 # Environment files
 .env

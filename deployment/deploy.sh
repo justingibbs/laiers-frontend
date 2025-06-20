@@ -91,7 +91,6 @@ deploy_service() {
     ENV_VARS="$ENV_VARS,GOOGLE_CLOUD_LOCATION=$REGION"
     ENV_VARS="$ENV_VARS,GOOGLE_GENAI_USE_VERTEXAI=true"
     ENV_VARS="$ENV_VARS,MAINTENANCE_MODE=$maintenance_mode"
-    ENV_VARS="$ENV_VARS,PORT=8080"
     
     # Deploy with gcloud run deploy
     gcloud run deploy "$SERVICE_NAME" \
@@ -135,7 +134,7 @@ toggle_maintenance() {
     
     gcloud run services update "$SERVICE_NAME" \
         --region "$REGION" \
-        --set-env-vars="MAINTENANCE_MODE=$mode"
+        --set-env-vars="MAINTENANCE_MODE=$mode,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_GENAI_USE_VERTEXAI=true"
     
     log_success "Maintenance mode updated to: $mode"
     

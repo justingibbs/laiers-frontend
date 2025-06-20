@@ -62,10 +62,16 @@ laiers/
 │   ├── __init__.py
 │   ├── firestore.py      # Firestore helpers + opportunity management
 │   ├── auth.py           # Firebase authentication helpers
+│   ├── middleware.py     # Maintenance mode middleware
 │   └── models.py         # Pydantic models
-└── deployment/
-    ├── Dockerfile        # For Cloud Run (uses UV)
-    └── cloudbuild.yaml   # Cloud Build configuration
+├── deployment/           # Cloud Run deployment system
+│   ├── deploy.sh         # Full-featured deployment script
+│   ├── quick-deploy.sh   # Quick deployment commands
+│   ├── README.md         # Comprehensive deployment guide
+│   └── cloudbuild.yaml  # Cloud Build configuration
+├── Dockerfile            # Container configuration for Cloud Run (uses UV)
+├── .dockerignore        # Files excluded from container build
+└── run.py               # Entry point for Cloud Run deployment
 ```
 
 ## Code Patterns to Follow
@@ -402,11 +408,21 @@ GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
 GOOGLE_GENAI_USE_VERTEXAI=true
 
-# Firebase
+# Firebase Authentication
+# DEVELOPMENT: Use JSON service account file (downloaded from Firebase Console)
 FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
+
+# PRODUCTION: Use Cloud Run's built-in service account (recommended)
+# - Don't set FIREBASE_CREDENTIALS_PATH in production
+# - Cloud Run automatically provides authentication
+# - More secure than embedding JSON files in containers
 
 # ADK Configuration (optional)
 ADK_BUCKET_NAME=your-bucket-name
+
+# Cloud Run Deployment Settings
+PORT=8080                    # Cloud Run uses port 8080
+MAINTENANCE_MODE=false       # Set to 'true' for maintenance mode deployment
 ```
 
 ## Google Cloud Setup - CRITICAL STEPS
@@ -562,6 +578,48 @@ except Exception as e:
     })
 ```
 
+## Cloud Run Deployment - PRODUCTION READY
+
+### Complete Deployment System
+The application includes a full Cloud Run deployment system with maintenance mode:
+
+**Key Files:**
+- **`Dockerfile`**: UV-optimized container for Cloud Run
+- **`.dockerignore`**: Optimized build context exclusions
+- **`deployment/deploy.sh`**: Full-featured deployment script
+- **`deployment/quick-deploy.sh`**: Quick commands for common operations
+- **`deployment/README.md`**: Comprehensive deployment documentation
+- **`utils/middleware.py`**: Maintenance mode middleware
+
+### Maintenance Mode System
+- **Safe Deployments**: Deploy in maintenance mode first
+- **Professional UI**: Beautiful "Coming Soon" page during maintenance
+- **Health Checks**: Always accessible even during maintenance (`/health`, `/_ah/health`)
+- **Instant Toggle**: Switch live/maintenance without rebuilding
+- **Environment Control**: Uses `MAINTENANCE_MODE` environment variable
+
+### Deployment Commands
+```bash
+# Quick deployment workflow
+./deployment/quick-deploy.sh deploy      # Deploy in maintenance mode
+./deployment/quick-deploy.sh live        # Make app live
+./deployment/quick-deploy.sh maintenance # Back to maintenance mode
+./deployment/quick-deploy.sh url         # Get service URL
+./deployment/quick-deploy.sh logs        # View logs
+
+# Full-featured commands
+./deployment/deploy.sh deploy            # Deploy with all options
+./deployment/deploy.sh status            # Service status
+./deployment/deploy.sh logs              # Comprehensive logs
+```
+
+### Production Configuration
+- **Application Default Credentials**: No JSON files in containers
+- **Environment Variables**: All config via Cloud Run environment
+- **Auto-scaling**: Scales to zero for cost optimization
+- **Health Monitoring**: Multiple health check endpoints
+- **Security**: Non-root container user, minimal attack surface
+
 ## Development Focus
 - **MVP Prototype**: Focus on core user flow (signup → dashboard → chat)
 - **User Types**: "company" and "talent" only, single agent handles both
@@ -573,6 +631,7 @@ except Exception as e:
 - **AI-Guided Creation**: Use ADK agent for structured opportunity creation
 - **HTMX Interactions**: Dynamic forms and partial page updates
 - **Firestore Integration**: All data stored in Firestore collections
+- **Production Ready**: Complete Cloud Run deployment with maintenance mode
 
 ## Common Mistakes to Avoid - UPDATED
 - **Wrong ADK mounting**: Don't use ADK app as main app, mount under `/adk`
@@ -602,4 +661,49 @@ This is NORMAL behavior. ADK reuses existing sessions. Only worry if message sen
 - Wait 2-3 minutes after enabling
 - Verify project ID matches in environment variables
 
+### Cloud Run Deployment Issues - NEW TROUBLESHOOTING
+
+**1. Project ID vs Project Number Error**
+```bash
+# Fix gcloud config to use project ID, not project number
+gcloud config set project your-project-id  # Use string, not number
+gcloud auth application-default set-quota-project your-project-id
+```
+
+**2. Container Build Failures**
+- **Missing uv.lock**: Ensure `uv.lock` is NOT in `.dockerignore`
+- **Permission Issues**: Dependencies installed as root in Dockerfile
+- **Port Configuration**: Use `--port=8080`, not `PORT=8080` environment variable
+
+**3. Container Startup Failures**
+- **Firebase Config**: Use Application Default Credentials in production
+- **Environment Variables**: Set all required variables during deployment
+- **Project ID Missing**: Ensure `GOOGLE_CLOUD_PROJECT` is set in Cloud Run
+
+**4. Environment Variable Loss During Updates**
+```bash
+# WRONG - loses other environment variables
+gcloud run services update SERVICE --set-env-vars="MAINTENANCE_MODE=true"
+
+# CORRECT - preserves all environment variables
+gcloud run services update SERVICE --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=project-id,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=true"
+```
+
+**5. Deployment Debug Commands**
+```bash
+# Check service status
+./deployment/deploy.sh status
+
+# View deployment logs
+./deployment/deploy.sh logs
+
+# Test health endpoint
+curl "$(./deployment/quick-deploy.sh url)/health"
+
+# Check environment variables
+gcloud run services describe SERVICE_NAME --region us-central1 --format="yaml" | grep -A 20 "env:"
+```
+
 When writing code, always reference these ADK integration patterns. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer. **Always verify Google Cloud setup before troubleshooting code issues.**
+
+**For deployment issues, check `deployment/README.md` for comprehensive troubleshooting guide.**

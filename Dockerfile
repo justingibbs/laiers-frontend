@@ -3,8 +3,7 @@ FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    UV_CACHE_DIR=/tmp/uv-cache
+    PYTHONDONTWRITEBYTECODE=1
 
 # Install system dependencies needed for Google ADK and Firebase
 RUN apt-get update && apt-get install -y \
@@ -16,9 +15,6 @@ RUN apt-get update && apt-get install -y \
 # Install UV
 RUN pip install uv
 
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash app
-
 # Set work directory
 WORKDIR /app
 
@@ -26,23 +22,20 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-# Install dependencies using UV
+# Install dependencies using UV (as root to avoid permission issues)
 RUN uv sync --frozen --no-dev
 
 # Copy application code
 COPY . .
 
-# Create necessary directories and set permissions
-RUN mkdir -p config && \
+# Create non-root user for security after installing dependencies
+RUN useradd --create-home --shell /bin/bash app && \
+    mkdir -p config && \
     chown -R app:app /app && \
     chmod -R 755 /app
 
 # Switch to non-root user
 USER app
-
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
 
 # Expose port (Cloud Run uses 8080 by default)
 EXPOSE 8080

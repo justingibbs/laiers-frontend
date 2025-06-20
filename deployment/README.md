@@ -21,28 +21,62 @@ This guide covers deploying your FastAPI + Google ADK application to Google Clou
    export GOOGLE_CLOUD_LOCATION=us-central1
    ```
 
-3. **Required APIs Enabled**
+3. **Required APIs Enabled** (done automatically by deployment script)
    - Cloud Run API
    - Cloud Build API  
    - Vertex AI API
    - AI Platform API
 
-### Deploy in 3 Commands
+## 🎯 **The Two Commands You Need**
 
-1. **Initial Deployment (Maintenance Mode)**
-   ```bash
-   ./deployment/quick-deploy.sh deploy
-   ```
+### **For Development/Testing (Safe Deployment):**
+```bash
+./deployment/quick-deploy.sh deploy
+```
+- Deploys your app in **maintenance mode**
+- Users see a professional "Coming Soon" page
+- You can test functionality safely
+- Health checks work for monitoring
 
-2. **Make App Live**
-   ```bash
-   ./deployment/quick-deploy.sh live
-   ```
+### **For Going Live (Production):**
+```bash
+./deployment/quick-deploy.sh live
+```
+- Makes your app **live** for real users
+- Switches from maintenance mode to normal operation
+- Instant toggle - no rebuild required
 
-3. **Get Service URL**
-   ```bash
-   ./deployment/quick-deploy.sh url
-   ```
+## ⚡ **Complete Workflow Example**
+
+```bash
+# Step 1: Deploy safely (maintenance mode)
+./deployment/quick-deploy.sh deploy
+
+# Step 2: Test your deployment
+curl "$(./deployment/quick-deploy.sh url)/health"
+
+# Step 3: Make it live when ready
+./deployment/quick-deploy.sh live
+
+# Later: Put back in maintenance for updates
+./deployment/quick-deploy.sh maintenance
+```
+
+## 📋 **All Available Commands**
+
+```bash
+# Deployment
+./deployment/quick-deploy.sh deploy      # Deploy in maintenance mode
+./deployment/quick-deploy.sh live        # Make app live
+./deployment/quick-deploy.sh maintenance # Back to maintenance mode
+
+# Information  
+./deployment/quick-deploy.sh url         # Get service URL
+./deployment/quick-deploy.sh logs        # View recent logs
+
+# Help
+./deployment/quick-deploy.sh             # Show help
+```
 
 ## 📋 Deployment Files Overview
 

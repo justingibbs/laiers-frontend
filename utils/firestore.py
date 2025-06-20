@@ -16,19 +16,27 @@ AVAILABLE_COMPANIES = [
 
 class FirestoreService:
     def __init__(self):
-        # Load project ID from web config
-        try:
-            with open("config/firebase-web-config.json", "r") as f:
-                web_config = json.load(f)
-                project_id = web_config.get('projectId')
-                logger.debug(f"Loaded project ID from web config: {project_id}")
-        except Exception as e:
-            logger.error(f"Failed to load web config: {e}")
-            raise
+        # Load project ID from web config or environment variable
+        project_id = None
+        
+        # Try environment variable first (for production)
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        
+        # Fallback to web config file (for development)
+        if not project_id:
+            try:
+                with open("config/firebase-web-config.json", "r") as f:
+                    web_config = json.load(f)
+                    project_id = web_config.get('projectId')
+                    logger.debug(f"Loaded project ID from web config: {project_id}")
+            except FileNotFoundError:
+                logger.warning("firebase-web-config.json not found")
+            except Exception as e:
+                logger.error(f"Failed to load web config: {e}")
 
         if not project_id:
-            logger.error("Project ID not found in web config")
-            raise ValueError("Project ID not found in web config")
+            logger.error("Project ID not found in environment variable GOOGLE_CLOUD_PROJECT or web config")
+            raise ValueError("Project ID not found. Set GOOGLE_CLOUD_PROJECT environment variable.")
 
         try:
             self.db = firestore.Client(project=project_id)
