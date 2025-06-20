@@ -14,6 +14,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 import firebase_admin
 from firebase_admin import credentials, auth
 from utils.firestore import FirestoreService
+from utils.middleware import MaintenanceModeMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -22,7 +23,9 @@ load_dotenv()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "config/firebase-credentials.json")
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
+PORT = int(os.getenv("PORT", 8000))  # Cloud Run uses PORT env var
 
 # Configure logging
 logging.basicConfig(
@@ -75,6 +78,9 @@ except Exception as e:
 
 # Create the main FastAPI app for your custom routes
 app = FastAPI(title="Job Matching App")
+
+# Add maintenance mode middleware
+app.add_middleware(MaintenanceModeMiddleware)
 
 # Add custom exception handler for validation errors
 @app.exception_handler(RequestValidationError)
@@ -854,16 +860,36 @@ async def logout(request: Request):
     response.delete_cookie("session_token")
     return response
 
-# Health check endpoint
+# Health check endpoints
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "environment": ENVIRONMENT,
-        "firebase_project": PROJECT_ID,
-        "adk_mounted": True
-    }
+    """Health check endpoint for monitoring"""
+    try:
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "environment": ENVIRONMENT,
+            "firebase_project": PROJECT_ID,
+            "adk_mounted": True,
+            "maintenance_mode": os.getenv("MAINTENANCE_MODE", "false"),
+            "services": {
+                "firebase": "ok" if firebase_admin._apps else "not_initialized",
+                "firestore": "ok" if firestore_service else "not_initialized"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(status_code=503, detail="Service unhealthy")
+
+@app.get("/_ah/health")
+async def app_engine_health():
+    """App Engine/Cloud Run health check endpoint"""
+    return {"status": "ok"}
+
+@app.get("/api/health")
+async def api_health():
+    """Alternative health check endpoint"""
+    return await health_check()
 
 # Debug route to test ADK integration
 @app.get("/debug/adk")
