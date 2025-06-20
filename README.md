@@ -147,18 +147,27 @@ Once the application is running, you can access these different interfaces:
 - **Login**: `http://localhost:8000/login`
 - **Dashboard**: `http://localhost:8000/dashboard` - Main user interface with AI chat assistant
 
+### Opportunity Management (NEW FEATURE)
+- **Company Portal**: `http://localhost:8000/company/{company_id}` - Company page with opportunities list
+- **Create Opportunity**: `http://localhost:8000/company/{company_id}/opportunities/create` - AI-guided job creation
+- **Browse Opportunities**: `http://localhost:8000/opportunities` - All available jobs (talent users)
+- **Opportunity Details**: `http://localhost:8000/opportunities/{opportunity_id}` - Job details + application form
+
 ### Development & Debugging
 - **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` - Google ADK development interface for testing agents
 - **API Documentation**: `http://localhost:8000/adk/docs` - ADK API documentation
 - **Setup Test**: `http://localhost:8000/test/adk-complete-flow` - Verify ADK configuration
 - **Debug Info**: `http://localhost:8000/debug/adk` - Agent configuration and status
 - **Health Check**: `http://localhost:8000/health` - Application health status
+- **Test Opportunities**: `http://localhost:8000/test/opportunities/{company_id}` - Debug opportunities data
 
 ### API Endpoints
 - **Chat with Agent**: `POST /api/chat` - HTMX endpoint for chat interface
 - **User Registration**: `POST /api/register` - Firebase registration endpoint
 - **User Login**: `POST /api/login` - Firebase login endpoint
 - **Logout**: `POST /api/logout` - User logout endpoint
+- **Create Opportunity**: `POST /api/opportunities/create` - HTMX endpoint for AI-guided creation
+- **Apply to Job**: `POST /api/opportunities/{opportunity_id}/apply` - Submit job application
 
 ## Project Architecture
 
@@ -179,6 +188,18 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
    - Right: AI chat assistant powered by ADK agent
 4. **Agent Interaction** - Context-aware conversations based on user type (talent vs company)
 
+#### Company User Flow (NEW)
+5. **Company Portal** - Access company page from dashboard
+6. **Create Opportunities** - AI-guided job posting through chat interface
+7. **Manage Opportunities** - View and manage posted jobs
+8. **Review Applications** - View candidate applications (future feature)
+
+#### Talent User Flow (NEW)
+5. **Browse Opportunities** - Discover available jobs from dashboard
+6. **View Job Details** - See complete job descriptions and requirements
+7. **Apply to Jobs** - Complete custom survey applications
+8. **Track Applications** - View application status (future feature)
+
 ### Technical Architecture
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
@@ -198,6 +219,49 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
                        │ • LLM Interface  │
                        └──────────────────┘
 ```
+
+## Opportunity Management System
+
+The application includes a complete job opportunity management system that allows companies to create job postings through AI-guided conversations and enables talent users to discover and apply to opportunities.
+
+### Key Features
+
+#### For Company Users:
+- **AI-Guided Job Creation**: Chat with the AI agent to create structured job postings
+- **Company Portal**: Dedicated page showing all company opportunities
+- **Automatic Publishing**: AI determines when job details are complete and auto-publishes
+- **Survey Generation**: AI creates custom application questions for each job
+
+#### For Talent Users:
+- **Opportunity Discovery**: Browse all available jobs in a clean, searchable interface
+- **Detailed Job Views**: See complete job descriptions, requirements, and company info
+- **Custom Applications**: Complete personalized survey applications for each job
+- **Application Tracking**: View application status and history
+
+### Data Structure
+
+The system uses Firestore collections:
+
+- **opportunities**: Job postings with company info, requirements, and survey questions
+- **applications**: User applications with survey responses and metadata
+- **users**: Extended with company affiliations and profile data
+
+### AI Integration
+
+The ADK agent handles opportunity creation through structured conversations:
+1. **Job Title & Description**: AI guides users through basic job details
+2. **Requirements & Qualifications**: Collects necessary skills and experience
+3. **Logistics**: Location, employment type, salary information
+4. **Survey Questions**: AI generates 3-5 relevant application questions
+5. **Auto-Publishing**: When complete, opportunity is automatically created
+
+### Technical Implementation
+
+- **HTMX-Powered**: Dynamic forms and real-time updates without page refreshes
+- **Responsive Design**: Mobile-friendly interfaces for all opportunity pages
+- **Component-Based**: Reusable templates for opportunity cards and forms
+- **Error Handling**: Graceful fallbacks and user-friendly error messages
+- **Performance Optimized**: Efficient Firestore queries with client-side sorting
 
 ## Development
 
@@ -233,6 +297,8 @@ You can test the AI agent in multiple ways:
 2. **Custom Chat Interface**: Use the dashboard at `http://localhost:8000/dashboard` after logging in
 3. **ADK Dev UI**: Use the development interface at `http://localhost:8000/adk/dev-ui/`
 4. **Direct API**: Make POST requests to `/adk/run` with proper payload
+5. **Opportunity Creation**: Test AI-guided job creation at `/company/{company_id}/opportunities/create`
+6. **Opportunity Testing**: Debug opportunities data at `/test/opportunities/{company_id}`
 
 ### Firebase Configuration Files
 
@@ -272,7 +338,8 @@ laiers/
 │   └── agent.py               # Job matching agent definition (root_agent variable)
 ├── utils/                     # Utility modules
 │   ├── __init__.py
-│   ├── firestore.py           # Firestore database operations
+│   ├── firestore.py           # Firestore database operations + opportunity management
+│   ├── auth.py                # Firebase authentication helpers
 │   └── models.py              # Pydantic data models
 ├── templates/                 # Jinja2 templates
 │   ├── base.html             # Base template
@@ -280,9 +347,15 @@ laiers/
 │   ├── register.html         # Registration page
 │   ├── login.html            # Login page
 │   ├── dashboard.html        # Main dashboard with chat
+│   ├── company.html          # Company portal with opportunities list
+│   ├── opportunities_list.html # Browse all opportunities (talent users)
+│   ├── create_opportunity.html # AI-guided opportunity creation
+│   ├── opportunity_detail.html # Job details + application form
 │   └── components/           # Reusable components
 │       ├── chat_message.html # Chat message component
-│       └── chat_error.html   # Chat error component
+│       ├── chat_error.html   # Chat error component
+│       ├── opportunity_card.html # Opportunity display card
+│       └── survey_form.html  # Application survey form
 ├── static/                   # Static assets
 │   └── css/
 │       └── styles.css        # Application styles
@@ -347,6 +420,7 @@ Expected test result:
 **Symptoms:**
 - Login/registration fails
 - "Firebase not initialized" errors
+- Opportunity creation/retrieval fails
 
 **Solutions:**
 ```bash
@@ -364,6 +438,10 @@ with open('config/firebase-credentials.json') as f:
     print('Project ID:', data.get('project_id'))
     print('Client Email:', data.get('client_email'))
 "
+
+# Test Firestore collections (opportunities feature)
+# Ensure Firestore is in test mode or has proper security rules
+# Collections used: users, opportunities, applications
 ```
 
 #### 4. Environment Variable Issues

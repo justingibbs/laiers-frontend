@@ -42,9 +42,15 @@ laiers/
 │   ├── login.html        # Login page
 │   ├── register.html     # Registration page
 │   ├── dashboard.html    # Main dashboard with profile + chat
+│   ├── company.html      # Company portal with opportunities list
+│   ├── opportunities_list.html  # Browse all opportunities (talent users)
+│   ├── create_opportunity.html  # AI-guided opportunity creation
+│   ├── opportunity_detail.html  # Job details + application form
 │   └── components/       # Reusable template components
-│       ├── chat_message.html  # Chat message component
-│       └── chat_error.html    # Chat error component
+│       ├── chat_message.html      # Chat message component
+│       ├── chat_error.html        # Chat error component
+│       ├── opportunity_card.html  # Opportunity display card
+│       └── survey_form.html       # Application survey form
 ├── static/               # Static assets
 │   ├── css/
 │   │   └── styles.css    # Main stylesheet
@@ -54,7 +60,8 @@ laiers/
 │   └── firebase-web-config.json      # Firebase web app config
 ├── utils/                # Utility modules (keep minimal)
 │   ├── __init__.py
-│   ├── firestore.py      # Firestore helpers
+│   ├── firestore.py      # Firestore helpers + opportunity management
+│   ├── auth.py           # Firebase authentication helpers
 │   └── models.py         # Pydantic models
 └── deployment/
     ├── Dockerfile        # For Cloud Run (uses UV)
@@ -318,6 +325,45 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error getting user profile: {e}")
             return None
+
+    # NEW: Opportunity Management Methods
+    async def create_opportunity(self, opportunity_data: dict) -> str | None:
+        try:
+            doc_ref = self.db.collection("opportunities").add({
+                **opportunity_data,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "status": "active"
+            })
+            return doc_ref[1].id
+        except Exception as e:
+            logger.error(f"Error creating opportunity: {e}")
+            return None
+    
+    async def get_all_opportunities(self) -> list:
+        try:
+            query = self.db.collection('opportunities').where('status', '==', 'active')
+            docs = query.stream()
+            opportunities = []
+            for doc in docs:
+                opportunity_data = doc.to_dict()
+                opportunity_data['id'] = doc.id
+                opportunities.append(opportunity_data)
+            opportunities.sort(key=lambda x: x.get('created_at'), reverse=True)
+            return opportunities
+        except Exception as e:
+            logger.error(f"Error getting all opportunities: {e}")
+            return []
+    
+    async def submit_application(self, application_data: dict) -> bool:
+        try:
+            self.db.collection("applications").add({
+                **application_data,
+                "applied_at": firestore.SERVER_TIMESTAMP
+            })
+            return True
+        except Exception as e:
+            logger.error(f"Error submitting application: {e}")
+            return False
 ```
 
 ## Environment Configuration - CRITICAL SETUP
@@ -425,6 +471,14 @@ dev-dependencies = [
 - **Login**: `http://localhost:8000/login`
 - **Dashboard**: `http://localhost:8000/dashboard` (requires auth)
 
+### Opportunity Management URLs - NEW FEATURE
+- **Company Portal**: `http://localhost:8000/company/{company_id}` - Company page with opportunities list
+- **Create Opportunity**: `http://localhost:8000/company/{company_id}/opportunities/create` - AI-guided creation
+- **Browse Opportunities**: `http://localhost:8000/opportunities` - All opportunities (talent users)
+- **Opportunity Details**: `http://localhost:8000/opportunities/{opportunity_id}` - Job details + application
+- **Apply to Opportunity**: `POST /api/opportunities/{opportunity_id}/apply` - Submit application
+- **Create Opportunity API**: `POST /api/opportunities/create` - HTMX chat during creation
+
 ### ADK Integration URLs - VERIFIED WORKING
 - **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` (note trailing slash!)
 - **ADK API Docs**: `http://localhost:8000/adk/docs`
@@ -433,6 +487,7 @@ dev-dependencies = [
 ### Debug URLs
 - **Debug Agent**: `http://localhost:8000/debug/adk`
 - **Health Check**: `http://localhost:8000/health`
+- **Test Opportunities**: `http://localhost:8000/test/opportunities/{company_id}` - Debug opportunities
 
 ## Coding Rules
 
@@ -514,6 +569,10 @@ except Exception as e:
 - **Clean Integration**: Custom UI + ADK backend, not ADK's default UI
 - **Template-First**: Design templates before implementing routes
 - **Responsive Design**: Mobile-friendly two-panel layout
+- **Opportunity Management**: Complete job posting and application workflow
+- **AI-Guided Creation**: Use ADK agent for structured opportunity creation
+- **HTMX Interactions**: Dynamic forms and partial page updates
+- **Firestore Integration**: All data stored in Firestore collections
 
 ## Common Mistakes to Avoid - UPDATED
 - **Wrong ADK mounting**: Don't use ADK app as main app, mount under `/adk`
