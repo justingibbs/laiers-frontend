@@ -15,36 +15,18 @@
 
     <div class="user-info">
         <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
+        <a href="/company/{{ user_profile.company_id }}"
+                            style="color: #1976d2; text-decoration: none; font-weight: 500;">
+                            🏢 Visit {{ user_profile.company_name }} Portal →
+                        </a>
         <span class="user-type">{{ user_profile.user_type | title }}</span>
         <pre>{{ user_profile.profile.name }}</pre>
-<pre>{{ user.email }}</pre>
+        <pre>{{ user.email }}</pre>
 
     </div>
     <div class="content">
         <!-- Profile Information Panel -->
         <div class="profile-card">
-            <div class="profile-header">
-                <h2 class="profile-title">Profile Information</h2>
-            </div>
-
-            <div class="profile-section">
-                <h3>Basic Information</h3>
-                <div class="profile-field">
-                    <span class="field-label">Email:</span>
-                    <span class="field-value">{{ user_profile.email }}</span>
-                </div>
-                <div class="profile-field">
-                    <span class="field-label">User Type:</span>
-                    <span class="field-value">{{ user_profile.user_type | title }}</span>
-                </div>
-                
-                {% if user_profile.profile.name %}
-                <div class="profile-field">
-                    <span class="field-label">Name:</span>
-                    <span class="field-value">{{ user_profile.profile.name }}</span>
-                </div>
-                {% endif %}
-            </div>
 
             {% if user_profile.user_type == 'talent' %}
             <div class="profile-section">
@@ -82,49 +64,9 @@
             </div>
             {% endif %}
 
-            {% if user_profile.user_type == 'company' %}
-            <div class="profile-section">
-                <h3>Company Information</h3>
-                {% if user_profile.profile.company %}
-                <div class="profile-field">
-                    <span class="field-label">Company Name:</span>
-                    <span class="field-value">{{ user_profile.profile.company }}</span>
-                </div>
-                {% endif %}
-                {% if user_profile.company_id %}
-                <div class="profile-field">
-                    <span class="field-label">Company Portal:</span>
-                    <span class="field-value">
-                        <a href="/company/{{ user_profile.company_id }}"
-                            style="color: #1976d2; text-decoration: none; font-weight: 500;">
-                            🏢 Visit {{ user_profile.company_name }} Portal →
-                        </a>
-                    </span>
-                </div>
-                {% endif %}
-                {% if user_profile.profile.industry %}
-                <div class="profile-field">
-                    <span class="field-label">Industry:</span>
-                    <span class="field-value">{{ user_profile.profile.industry }}</span>
-                </div>
-                {% endif %}
-            </div>
-            {% endif %}
 
-            <!-- Debug Info (remove in production) -->
-            <div class="profile-section" style="border-top: 1px solid #eee; padding-top: 1rem; margin-top: 1rem;">
-                <h3>Development</h3>
-                <div class="profile-field">
-                    <span class="field-label">User ID:</span>
-                    <span class="field-value" style="font-family: monospace; font-size: 0.8em;">{{ user.uid }}</span>
-                </div>
-                <div class="profile-field">
-                    <span class="field-label">ADK Dev UI:</span>
-                    <span class="field-value">
-                        <a href="/adk/dev-ui/" target="_blank" style="color: #1976d2;">Open ADK Interface</a>
-                    </span>
-                </div>
-            </div>
+
+            
         </div>
 
         <!-- AI Chat Assistant Panel -->
