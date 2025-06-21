@@ -1,9 +1,10 @@
-from google.adk.agents import Agent
+from google.adk.agents import LlmAgent
 
 # This variable name must match the agent name for proper ADK discovery
-job_posting_agent = Agent(
+job_posting_agent = LlmAgent(
     name="job_posting_agent",
     model="gemini-2.0-flash-lite",
+    description="Specialized agent for creating job opportunities. Guides users through job posting creation including soft skills identification and behavioral interview questions.",
     instruction="""You are a specialized job posting creation agent. You guide company users through creating a brief job opportunity.
 
     Follow this conversational flow:
