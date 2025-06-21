@@ -1,44 +1,50 @@
 {% extends "base.html" %}
 
-{% block title %}Login - Job Matching App{% endblock %}
+{% block title %}Laiers.ai – Sign In{% endblock %}
 
 {% block content %}
-<div class="auth-container">
+<div class="container">
+
     <div class="auth-form">
         <h2>Sign In</h2>
-        
+
         <form id="login-form">
             <div class="form-group">
                 <label for="email">Email</label>
                 <input type="email" id="email" name="email" required>
             </div>
-            
+
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
             </div>
-            
+
             <button type="submit" class="btn-primary">Sign In</button>
         </form>
-        
+
         <div id="auth-result"></div>
-        
+
         <p>Don't have an account? 
             <a href="{{ url_for('register_page') }}">Sign up here</a>
         </p>
     </div>
 </div>
 
+<!-- Firebase config JSON block -->
+<script id="firebase-config" type="application/json">
+    {{ firebase_config | tojson | safe }}
+</script>
+
+<!-- Firebase auth logic -->
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-    // Initialize Firebase
-    const firebaseConfig = {{ firebase_config | tojson }};
+    const firebaseConfig = JSON.parse(document.getElementById('firebase-config').textContent);
+
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
 
-    // Handle form submission
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.getElementById('email').value;
@@ -46,21 +52,17 @@
         const resultDiv = document.getElementById('auth-result');
 
         try {
-            // Sign in with Firebase
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             const idToken = await userCredential.user.getIdToken();
 
-            // Send token to backend
             const response = await fetch('/api/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ idToken })
             });
 
             const data = await response.json();
-            
+
             if (data.success) {
                 window.location.href = data.redirect;
             } else {
@@ -81,4 +83,4 @@
         }
     });
 </script>
-{% endblock %} 
+{% endblock %}
