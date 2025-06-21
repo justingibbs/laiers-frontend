@@ -34,3 +34,6 @@ ENV/
 
 # Logs
 *.log
+
+# Mac
+.DS_Store

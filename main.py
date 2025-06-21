@@ -691,21 +691,36 @@ async def create_opportunity_chat(
                 
                 survey_questions = []
                 current_section = None
+                inside_code_block = False
                 
                 for line in lines:
                     line = line.strip()
+                    
+                    # Handle code block markers
+                    if line.startswith("```"):
+                        inside_code_block = not inside_code_block
+                        continue
+                    
+                    # Skip lines outside the code block if we found one
+                    if "```" in final_response and not inside_code_block:
+                        continue
+                    
                     if line.startswith("Title:"):
                         opportunity_data["title"] = line.replace("Title:", "").strip()
                     elif line.startswith("Description:"):
-                        opportunity_data["description"] = line.replace("Description:", "").strip()
-                    elif line.startswith("Requirements:"):
-                        opportunity_data["requirements"] = line.replace("Requirements:", "").strip()
+                        # Handle multi-line descriptions
+                        desc = line.replace("Description:", "").strip()
+                        opportunity_data["description"] = desc
+                    elif line.startswith("Requirements:") or line.startswith("Required Skills") or line.startswith("Key Responsibilities:"):
+                        # Handle various requirement formats
+                        reqs = line.replace("Requirements:", "").replace("Required Skills", "").replace("Key Responsibilities:", "").strip()
+                        opportunity_data["requirements"] = reqs
                     elif line.startswith("Location:"):
                         opportunity_data["location"] = line.replace("Location:", "").strip()
                     elif line.startswith("Employment Type:"):
                         opportunity_data["employment_type"] = line.replace("Employment Type:", "").strip()
-                    elif line.startswith("Salary Range:"):
-                        salary = line.replace("Salary Range:", "").strip()
+                    elif line.startswith("Salary Range:") or "salary range:" in line.lower():
+                        salary = line.replace("Salary Range:", "").replace("salary range:", "").strip()
                         if salary.lower() not in ["not specified", "n/a", ""]:
                             opportunity_data["salary_range"] = salary
                     elif line.startswith("Survey Questions:"):
@@ -718,14 +733,18 @@ async def create_opportunity_chat(
                         elif "- " in question_text:
                             question_text = question_text.replace("- ", "")
                         
-                        survey_questions.append({
-                            "question": question_text.strip(),
-                            "type": "text",
-                            "required": True
-                        })
+                        if question_text.strip():  # Only add non-empty questions
+                            survey_questions.append({
+                                "question": question_text.strip(),
+                                "type": "text",
+                                "required": True
+                            })
                 
                 # Add survey questions
                 opportunity_data["survey_questions"] = survey_questions
+                
+                # Log for debugging
+                logger.info(f"Parsed opportunity data: title='{opportunity_data.get('title')}', questions={len(survey_questions)}")
                 
                 # Create the opportunity
                 opportunity_id = await firestore_service.create_opportunity(opportunity_data)
@@ -748,6 +767,7 @@ The opportunity includes {len(survey_questions)} screening questions to help you
                     
             except Exception as e:
                 logger.error(f"Error parsing/creating opportunity: {e}")
+                logger.error(f"Full agent response was: {final_response[:500]}...")
                 final_response = "❌ There was an error processing the opportunity data. Let's try again - please provide the job details once more."
         
         # Return HTMX partial template

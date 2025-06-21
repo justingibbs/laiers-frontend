@@ -352,21 +352,6 @@
                 {% endif %}
             </div>
             {% endif %}
-
-            <!-- Debug Info (remove in production) -->
-            <div class="profile-section" style="border-top: 1px solid #eee; padding-top: 1rem; margin-top: 1rem;">
-                <h3>Development</h3>
-                <div class="profile-field">
-                    <span class="field-label">User ID:</span>
-                    <span class="field-value" style="font-family: monospace; font-size: 0.8em;">{{ user.uid }}</span>
-                </div>
-                <div class="profile-field">
-                    <span class="field-label">ADK Dev UI:</span>
-                    <span class="field-value">
-                        <a href="/adk/dev-ui/" target="_blank" style="color: #1976d2;">Open ADK Interface</a>
-                    </span>
-                </div>
-            </div>
         </div>
 
         <!-- AI Chat Assistant Panel -->
@@ -380,9 +365,9 @@
                     <p><strong>👋 Hi there! I'm your AI job assistant.</strong></p>
                     <p>
                         {% if user_profile.user_type == 'talent' %}
-                            I'm here to help you with <strong>job searching</strong>, <strong>resume optimization</strong>, <strong>interview prep</strong>, and <strong>career advice</strong>.
+                            I’m here to help you navigate today’s job market, uncover opportunites that match your <strong>human strengths</strong>, and connect with companies who value <strong>what AI can’t replace</strong>—and know how to harness what it can.
                         {% else %}
-                            I'm here to help you with <strong>job postings</strong>, <strong>candidate screening</strong>, <strong>hiring strategies</strong>, and <strong>recruitment best practices</strong>.
+                            I’m here to help you with <strong>posting opportunities</strong> and <strong>talent screening</strong>. Whether you're seeking talent with irreplaceable human strengths or AI-fluent candidates who can accelerate transformation, I’ll help you build teams ready for the future of work.
                         {% endif %}
                     </p>
                     <p>How can I assist you today?</p>
