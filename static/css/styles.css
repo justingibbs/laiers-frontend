@@ -1,211 +1,207 @@
 /* Global Styles */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    margin: 0;
-    padding: 0;
-    background-color: #f5f5f5;
-    line-height: 1.5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f7f7f7;
+  line-height: 1.6;
+  font-size: 1.125rem;
+  color: #333;
 }
 
-header {
-    background-color: #1976d2;
-    color: white;
-    padding: 1rem;
-    text-align: center;
+input {
+  background-color: #f7f7f7;
+  border: 4px solid #f7f7f7; 
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 16px;
+  color: #333;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+input:focus {
+  border-color: #40A8F5;
+  box-shadow: 4px 7px 0 #10547A;
+}
+select {
+  background-color: #f7f7f7;
+  border: 4px solid #f7f7f7;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 16px;
+  color: #333;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 20 20' fill='%2345B2FF' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5.25 7.5L10 12.25L14.75 7.5H5.25Z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 3rem;
+  cursor: pointer;
 }
 
-header h1 {
-    margin: 0;
+select:focus {
+  border-color: #40A8F5;
+  box-shadow: 4px 7px 0 #10547A;
 }
 
-main {
-    min-height: calc(100vh - 120px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem 1rem;
+
+
+
+/* Layout */
+.container {
+  max-width: 800px;
+  padding: 2rem;
+  margin: 0 auto;
+  text-align: center;
 }
 
-/* Authentication Pages */
-.auth-container {
-    width: 100%;
-    max-width: 400px;
-    margin: 0 auto;
-}
-
+/* Form Box */
 .auth-form {
-    background-color: white;
-    padding: 2rem;
-    border-radius: 0.5rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e0e0e0;
+  background: white;
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  border: 2px solid #e3e3e3;
+  max-width: 500px;
+  margin: 0 auto;
 }
 
-.auth-form h2 {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    color: #333;
+/* User Type Buttons */
+.user-type-selector {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
 }
 
-/* Form Styles */
+.user-type-btn {
+  flex: 1 1 45%;
+  padding: 1rem;
+  border: 2px solid #40A8F5;
+  border-radius: 999px;
+  color: #444;
+  cursor: pointer;
+  background: white;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.user-type-btn.selected {
+  border-color: #40A8F5;
+  background-color: #40A8F5;
+  color: #fff;
+}
+.user-type-btn:hover {
+  background-color: #d2e6f2;
+  color: #444;
+}
+
+
+.user-type-btn.selected:hover {
+  background-color: #289ae2;
+  color: #fff;
+}
+
+
+
+/* Form Fields */
 .form-group {
-    margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  text-align: left;
 }
 
 .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    color: #555;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #444;
 }
 
-.form-group input,
-.form-group select {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 0.25rem;
-    font-size: 1rem;
-    box-sizing: border-box;
-    transition: border-color 0.3s ease;
-}
 
-.form-group input:focus,
-.form-group select:focus {
-    outline: none;
-    border-color: #1976d2;
-    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-}
 
-.form-group select {
-    background-color: white;
-    cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 1rem;
-    padding-right: 2.5rem;
-}
-
-/* Button Styles */
+/* Primary Button */
+button,
 .btn-primary {
-    width: 100%;
-    padding: 0.75rem;
-    background-color: #1976d2;
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 1rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
+  background-color: #40A8F5;
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  font-weight: 700;
+  width: 100%;
+  box-shadow: 4px 7px 0 #0f557A;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  margin-top: 1rem;
 }
 
+button:hover,
 .btn-primary:hover {
-    background-color: #1565c0;
+  background-color: #289ae2;
+  box-shadow: 3px 5px 0 #0f557A;
 }
 
-.btn-primary:active {
-    background-color: #0d47a1;
+/* HTMX Indicators */
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
-/* Link Styles */
+.htmx-request .htmx-indicator {
+  opacity: 1;
+}
+
+/* Links and Info */
 .auth-form p {
-    text-align: center;
-    margin-top: 1.5rem;
-    color: #666;
+  text-align: center;
+  margin-top: 1.5rem;
+  color: #666;
 }
 
 .auth-form a {
-    color: #1976d2;
-    text-decoration: none;
+  color: #40A8F5;
+  text-decoration: none;
+  font-weight: 500;
 }
 
 .auth-form a:hover {
-    text-decoration: underline;
+  text-decoration: underline;
 }
 
-/* Form Results */
+/* Result Message */
 #auth-result {
-    margin-top: 1rem;
+  margin-top: 1rem;
+}
+
+/* Transitions */
+#form-fields {
+  transition: opacity 0.2s ease;
+}
+
+.htmx-swapping #form-fields {
+  opacity: 0.5;
 }
 
 /* Responsive Design */
 @media (max-width: 480px) {
-    .auth-container {
-        margin: 0 1rem;
-    }
-    
-    .auth-form {
-        padding: 1.5rem;
-    }
-}
+  .auth-form {
+    padding: 1.5rem;
+  }
 
-/* Landing Page Styles */
-.landing-container {
-    text-align: center;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
-}
+  .user-type-btn {
+    flex: 1 1 100%;
+  }
 
-.landing-hero {
-    background-color: white;
-    padding: 3rem 2rem;
-    border-radius: 0.5rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    margin-bottom: 2rem;
+  .container {
+    padding: 1rem;
+  }
 }
-
-.landing-hero h1 {
-    color: #333;
-    margin-bottom: 1rem;
-    font-size: 2.5rem;
-}
-
-.landing-hero p {
-    color: #666;
-    font-size: 1.2rem;
-    margin-bottom: 2rem;
-}
-
-.landing-buttons {
-    display: flex;
-    gap: 1rem;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.landing-button {
-    display: inline-block;
-    padding: 1rem 2rem;
-    background-color: #1976d2;
-    color: white;
-    text-decoration: none;
-    border-radius: 0.25rem;
-    font-weight: 500;
-    transition: background-color 0.3s ease;
-}
-
-.landing-button:hover {
-    background-color: #1565c0;
-}
-
-.landing-button.secondary {
-    background-color: #4caf50;
-}
-
-.landing-button.secondary:hover {
-    background-color: #45a049;
-}
-
-/* Utility Classes */
-.text-center {
-    text-align: center;
-}
-
-.mt-1 { margin-top: 0.5rem; }
-.mt-2 { margin-top: 1rem; }
-.mb-1 { margin-bottom: 0.5rem; }
-.mb-2 { margin-bottom: 1rem; }
