@@ -9,11 +9,14 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <header>
-        {% block header %}
-        <h1>Job Matching App</h1>
-        {% endblock %}
-    </header>
+    <header style="text-align: center; margin: 2rem 0;">
+    {% block header %}
+    <img src="{{ url_for('static', path='/img/logo_laiers.png') }}"
+         alt="Laiers.ai Logo"
+         style="max-width: 250px;" />
+    {% endblock %}
+</header>
+
     
     <main>
         {% block content %}{% endblock %}
