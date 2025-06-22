@@ -25,8 +25,19 @@ COPY uv.lock ./
 # Install dependencies using UV (as root to avoid permission issues)
 RUN uv sync --frozen --no-dev
 
-# Copy application code
-COPY . .
+# Copy application code - be explicit about directories
+COPY main.py ./
+COPY run.py ./
+COPY job_matching_agent/ ./job_matching_agent/
+COPY utils/ ./utils/
+COPY templates/ ./templates/
+COPY static/ ./static/
+COPY config/ ./config/
+
+# Debug: List files to verify copy worked
+RUN echo "=== Listing /app contents ===" && ls -la /app/
+RUN echo "=== Listing utils contents ===" && ls -la /app/utils/
+RUN echo "=== Testing utils import ===" && python -c "from utils.firestore import FirestoreService; print('Import successful')"
 
 # Create non-root user for security after installing dependencies
 RUN useradd --create-home --shell /bin/bash app && \

@@ -112,7 +112,7 @@ logger.info(f"Looking for agents in directory: {AGENT_DIR}")
 try:
     adk_app = get_fast_api_app(
         agents_dir=AGENT_DIR,
-        session_db_url="sqlite:///./sessions.db",
+        # Remove session_db_url to use ADK's default cloud-based managed sessions
         allow_origins=["*"] if ENVIRONMENT == "development" else [],
         web=True,  # This enables the dev UI
         trace_to_cloud=False
