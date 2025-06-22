@@ -36,17 +36,40 @@ logger = logging.getLogger(__name__)
 
 # Load Firebase Web Config
 def load_firebase_web_config():
+    # First try to load from file (for local development)
     try:
         with open("config/firebase-web-config.json", "r") as f:
             config = json.load(f)
-            logger.debug("Web Config loaded successfully")
+            logger.debug("Web Config loaded successfully from file")
             return config
     except FileNotFoundError:
-        logger.warning("firebase-web-config.json not found. Firebase client authentication will not work.")
-        return {}
+        logger.info("firebase-web-config.json not found, trying environment variables...")
     except json.JSONDecodeError as e:
-        logger.error(f"Error parsing web config: {e}")
-        return {}
+        logger.error(f"Error parsing web config file: {e}")
+    
+    # Fallback to environment variables (for production)
+    try:
+        config = {
+            "apiKey": os.getenv("FIREBASE_API_KEY"),
+            "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN"),
+            "projectId": os.getenv("GOOGLE_CLOUD_PROJECT"),
+            "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET"),
+            "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID"),
+            "appId": os.getenv("FIREBASE_APP_ID")
+        }
+        
+        # Check if all required fields are present
+        if all(config.values()):
+            logger.info("Web Config loaded successfully from environment variables")
+            return config
+        else:
+            missing_vars = [k for k, v in config.items() if not v]
+            logger.warning(f"Missing Firebase environment variables: {missing_vars}")
+    except Exception as e:
+        logger.error(f"Error loading web config from environment: {e}")
+    
+    logger.warning("Firebase client authentication will not work - no valid config found")
+    return {}
 
 # Get project ID from web config or environment
 web_config = load_firebase_web_config()
@@ -54,6 +77,8 @@ PROJECT_ID = web_config.get('projectId') or GOOGLE_CLOUD_PROJECT
 
 if not PROJECT_ID:
     logger.error("Firebase project ID not found in web config or GOOGLE_CLOUD_PROJECT environment variable")
+    logger.error(f"web_config: {web_config}")
+    logger.error(f"GOOGLE_CLOUD_PROJECT: {GOOGLE_CLOUD_PROJECT}")
     raise ValueError("Firebase project ID not found. Set GOOGLE_CLOUD_PROJECT environment variable.")
 
 logger.info(f"Using Firebase project ID: {PROJECT_ID}")
