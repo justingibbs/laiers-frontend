@@ -30,7 +30,9 @@ laiers/
 ├── main.py                 # Main FastAPI app with ADK integration
 ├── job_matching_agent/     # ADK agent directory (REQUIRED structure)
 │   ├── __init__.py        # Must contain: from . import agent
-│   └── agent.py           # Must contain: root_agent = Agent(...)
+│   ├── agent.py           # Must contain: root_agent = Agent(...)
+│   ├── job_posting_agent.py    # Sub-agent for job creation
+│   └── assessment_agent.py     # Sub-agent for candidate evaluation
 ├── pyproject.toml         # UV project configuration & dependencies
 ├── uv.lock               # UV lockfile (auto-generated)
 ├── .env                   # Environment variables (local dev)
@@ -46,7 +48,7 @@ laiers/
 │   ├── company.html      # Company portal with opportunities list
 │   ├── opportunities_list.html  # Card-based opportunity browsing
 │   ├── create_opportunity.html  # AI-guided opportunity creation
-│   ├── opportunity_detail.html  # Job details + application form
+│   ├── opportunity_detail.html  # Job details + application form + assessment
 │   └── components/       # Reusable template components
 │       ├── header.html           # Shared header component
 │       ├── chat_message.html     # Chat message component
@@ -62,7 +64,7 @@ laiers/
 │   │   ├── opportunities.css     # Opportunity browsing styles
 │   │   ├── company.css          # Company portal styles
 │   │   ├── create-opportunity.css # Opportunity creation styles
-│   │   └── opportunity-detail.css # Job detail page styles
+│   │   └── opportunity-detail.css # Job detail + assessment styles
 │   └── images/           # Static images
 │       ├── logo_laiers.png      # Main Laiers.ai logo
 │       └── favicon.ico          # Site favicon
@@ -161,368 +163,316 @@ async def chat_with_agent(
     })
 ```
 
-### ADK Agent Structure (REQUIRED)
+### ADK Agent Structure (REQUIRED) - UPDATED WITH SUB-AGENTS
 ```python
 # job_matching_agent/__init__.py
 from . import agent
 
 # job_matching_agent/agent.py
-from google.adk.agents import Agent
+from google.adk.agents import LlmAgent
+from google.adk.tools.agent_tool import AgentTool
+from .job_posting_agent import job_posting_agent
+from .assessment_agent import assessment_agent
 
 # This MUST be named 'root_agent' for ADK discovery
-root_agent = Agent(
+root_agent = LlmAgent(
     name="job_matching_agent",
-    model="gemini-2.0-flash-exp",
-    instruction="""You are a job matching assistant.
-    
-    Context: You will receive user information including their user_type ('talent' or 'company').
-    
-    For 'talent' users:
-    - Help with resume review, job search, interview prep, career advice
-    
-    For 'company' users:  
-    - Help with job postings, candidate screening, hiring strategies
-    
-    Always adapt your responses based on the user_type in the context."""
+    model="gemini-2.0-flash-lite",
+    instruction="""You are a job matching assistant for a professional platform.
+
+Context: You will receive user information including their user_type ('talent' or 'company') and potentially a task type.
+
+For 'talent' users:
+- Help with resume review and optimization
+- Provide job search strategies and tips
+- Offer interview preparation guidance
+- Suggest skill development opportunities
+- Answer career-related questions
+
+For 'company' users:
+- Assist with writing effective job descriptions
+- Provide candidate screening and evaluation guidance
+- Offer hiring best practices and strategies
+- Help with employer branding advice
+- Support recruitment process optimization
+
+For 'company' users with Task: 'create_opportunity':
+IMMEDIATELY use the job_posting_agent tool. Do not create job opportunities yourself - always delegate this task to the job_posting_agent tool which specializes in the complete workflow including soft skills identification and behavioral interview question creation.
+
+For 'company' users with Task: 'assess_candidates':
+IMMEDIATELY use the assessment_agent tool. Do not attempt to evaluate candidates yourself - always delegate this task to the assessment_agent tool which specializes in analyzing survey responses, ranking candidates, and providing evaluation insights.
+
+Use the get_user_context tool to understand who you're talking to and the analyze_user_needs tool to provide appropriate guidance.
+
+Always maintain a professional, helpful, and encouraging tone. Ask follow-up questions to better understand their specific needs and provide personalized advice.""",
+    tools=[
+        AgentTool(agent=job_posting_agent),
+        AgentTool(agent=assessment_agent),
+        # ... other tools
+    ]
+)
+
+# job_matching_agent/job_posting_agent.py
+from google.adk.agents import LlmAgent
+
+job_posting_agent = LlmAgent(
+    name="job_posting_agent",
+    model="gemini-2.0-flash-lite",
+    instruction="""You are a specialized job posting creation assistant..."""
+)
+
+# job_matching_agent/assessment_agent.py  
+from google.adk.agents import LlmAgent
+
+assessment_agent = LlmAgent(
+    name="assessment_agent",
+    model="gemini-2.0-flash-lite", 
+    instruction="""You are a candidate assessment specialist that helps company users evaluate job applicants.
+
+Your expertise includes:
+- Analyzing candidate survey responses against job requirements
+- Identifying top candidates based on qualifications and responses
+- Suggesting interview questions tailored to each candidate
+- Providing objective evaluation criteria and scoring
+- Highlighting potential red flags or standout qualities
+
+When evaluating candidates:
+1. Review the job requirements and description carefully
+2. Analyze each candidate's survey responses for relevance and quality
+3. Look for specific examples, quantifiable achievements, and relevant experience
+4. Consider communication skills, attention to detail, and cultural fit indicators
+5. Provide balanced assessments highlighting both strengths and areas of concern
+
+Always maintain objectivity and focus on job-relevant criteria. Provide constructive insights that help hiring managers make informed decisions while avoiding bias."""
 )
 ```
 
-### Dashboard Template Pattern (Multi-Section Layout) - UPDATED
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Job Matching App</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
-    <link rel="stylesheet" href="/static/css/styles.css" />
-</head>
-<body>
-    {% include "components/header.html" %}
+### Assessment Feature Pattern - NEW
+```python
+# Opportunity Detail Route with Assessment
+@app.get("/opportunities/{opportunity_id}", response_class=HTMLResponse)
+async def opportunity_detail(request: Request, opportunity_id: str, user = Depends(require_auth)):
+    """Opportunity detail page with application form for talent users and assessment for company users"""
+    # Get opportunity
+    opportunity = await firestore_service.get_opportunity(opportunity_id)
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
     
-    <!-- Title Section with Personalized Welcome -->
-    <div class="title-container">
-        <h1>Welcome, {{ user_profile.profile.name or user.email }}</h1>
-    </div>
+    # Get user profile
+    user_profile = await firestore_service.get_user_profile(user['uid'])
+    if not user_profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
     
-    <div class="container">
-        <!-- User Type Specific Navigation -->
-        <div class="user-info">
-            {% if user_profile.user_type == 'company' %}
-            <div class="button-container">
-                <a class="btn-primary" href="/company/{{ user_profile.company_id }}">
-                    Visit {{ user_profile.company_name }} Portal
-                </a>
-            </div>
-            {% elif user_profile.user_type == 'talent' %}
-            <div class="button-container">
-                <a href="/opportunities" class="btn-primary">
-                    View Available Opportunities
-                </a>
-            </div>
-            {% endif %}
-        </div>
+    # Check if user has already applied (for talent users)
+    has_applied = False
+    if user_profile.get('user_type') == 'talent':
+        has_applied = await firestore_service.check_existing_application(opportunity_id, user['uid'])
+    
+    # Get applications count for company users who own this opportunity
+    applications_count = 0
+    if user_profile.get('user_type') == 'company' and user_profile.get('company_id') == opportunity.get('company_id'):
+        applications = await firestore_service.get_applications_by_opportunity(opportunity_id)
+        applications_count = len(applications)
+    
+    return templates.TemplateResponse("opportunity_detail.html", {
+        "request": request,
+        "user": user,
+        "user_profile": user_profile,
+        "opportunity": opportunity,
+        "has_applied": has_applied,
+        "applications_count": applications_count,
+        "firebase_config": web_config
+    })
+
+# Assessment API Endpoint
+@app.post("/api/opportunities/{opportunity_id}/assess")
+async def assess_candidates(
+    request: Request,
+    opportunity_id: str,
+    message: str = Form(...),
+    user = Depends(require_auth)
+):
+    """Chat with assessment agent for candidate evaluation via HTMX"""
+    try:
+        user_profile = await firestore_service.get_user_profile(user['uid'])
+        if not user_profile:
+            raise HTTPException(status_code=400, detail="User profile not found")
         
-        <div class="content">
-            <!-- Conditional Profile Information Panel -->
-            {% if user_profile.user_type == 'talent' %}
-            {% set has_skills = user_profile.profile.skills %}
-            {% set has_experience = user_profile.profile.experience_level %}
-            {% if has_skills or has_experience %}
-            <div class="profile-card">
-                <div class="profile-section">
-                    <h3>Professional Information</h3>
-                    
-                    {% if has_skills %}
-                    <div class="profile-field">
-                        <span class="field-label">Skills:</span>
-                        <span class="field-value">{{ has_skills | join(', ') }}</span>
-                    </div>
-                    {% endif %}
-                    
-                    {% if has_experience %}
-                    <div class="profile-field">
-                        <span class="field-label">Experience Level:</span>
-                        <span class="field-value">{{ has_experience }}</span>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-            {% endif %}
+        # Get opportunity and verify ownership
+        opportunity = await firestore_service.get_opportunity(opportunity_id)
+        if not opportunity:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        
+        # Verify user has access to assess candidates for this opportunity
+        if user_profile.get('user_type') != 'company' or user_profile.get('company_id') != opportunity.get('company_id'):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get applications for this opportunity
+        applications = await firestore_service.get_applications_by_opportunity(opportunity_id)
+        
+        # Prepare rich context for assessment agent
+        assessment_request = f"""Assess candidates for this position:
 
-            <!-- AI Chat Assistant Panel -->
-            <div class="chat-card">
-                <div class="chat-header">
-                    <h2 class="chat-title">🤖 AI Job Assistant</h2>
-                </div>
-                
-                <div id="chat-messages" class="chat-messages">
-                    <div class="welcome-message">
-                        <p><strong>👋 Hi there! I'm your AI job assistant.</strong></p>
-                        <p>
-                            {% if user_profile.user_type == 'talent' %}
-                            I'm here to help you with <strong>job searching</strong>, <strong>resume optimization</strong>,
-                            <strong>interview prep</strong>, and <strong>career advice</strong>.
-                            {% else %}
-                            I'm here to help you with <strong>job postings</strong>, <strong>candidate screening</strong>,
-                            <strong>hiring strategies</strong>, and <strong>recruitment best practices</strong>.
-                            {% endif %}
-                        </p>
-                        <p>How can I assist you today?</p>
-                    </div>
-                </div>
-                
-                <form class="chat-form" hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend"
-                      hx-trigger="submit" hx-indicator=".loading-indicator">
-                    <input type="text" name="message" class="chat-input"
-                           placeholder="Ask me anything about jobs and careers..." required autocomplete="off">
-                    <button type="submit">
-                        Send
-                        <span class="htmx-indicator loading-indicator"> ...</span>
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
+**Job Opportunity:** {opportunity.get('title')}
+**Company:** {company_name}
+**Description:** {opportunity.get('description')}
+**Requirements:** {opportunity.get('requirements', 'No specific requirements listed')}
+
+**Survey Questions:**
+{chr(10).join([f"{i+1}. {q.get('question', '')}" for i, q in enumerate(opportunity.get('survey_questions', []))])}
+
+**Candidates to Evaluate:** {len(applications)} applicant(s)
+{chr(10).join([f"- {app['applicant_name']} ({app['applicant_email']})" for app in applications])}
+
+**User Request:** {message}
+
+Please provide a comprehensive assessment including candidate ranking, strengths/weaknesses, and interview recommendations."""
+
+        contextual_message = f"[User type: company, Task: assess_candidates, Opportunity ID: {opportunity_id}] {assessment_request}"
+        
+        # Send to ADK agent with proper timeout
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # ... ADK communication logic
+            
+        return templates.TemplateResponse("components/chat_message.html", {
+            "request": request,
+            "user_message": message,
+            "agent_response": final_response,
+            "timestamp": datetime.now()
+        })
+        
+    except Exception as e:
+        logger.error(f"Assessment chat error: {e}")
+        return templates.TemplateResponse("components/chat_error.html", {
+            "request": request,
+            "error": "Failed to process assessment message. Please try again."
+        })
 ```
 
-### Branding Guidelines - NEW
+### Assessment UI Template Pattern - NEW
 ```html
-<!-- Logo Usage Pattern -->
-<div class="landing-page-logo-container">
-    <img src="/static/images/logo_laiers.png" alt="Laiers.ai Logo"
-         style="max-width: 250px; margin-bottom: 2rem;" />
-</div>
-
-<!-- Favicon Implementation -->
-<link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
-
-<!-- Brand Colors and Styling -->
-/* Primary brand color: #6366f1 (indigo) */
-/* Use consistently across buttons, links, and accents */
-```
-
-### Card-Based Design Pattern - NEW
-```html
-<!-- Opportunity Card Pattern -->
-<div class="opportunity-card" onclick="window.location.href='/opportunities/{{ opportunity.id }}'">
-    <div class="opportunity-header">
-        <h3 class="opportunity-title">{{ opportunity.title }}</h3>
-        <div class="opportunity-company">{{ opportunity.company_name }}</div>
-        <div class="opportunity-meta">
-            {% if opportunity.location %}
-            <span>📍 {{ opportunity.location }}</span>
-            {% endif %}
-            {% if opportunity.employment_type %}
-            <span>💼 {{ opportunity.employment_type | title }}</span>
-            {% endif %}
-            {% if opportunity.salary_range %}
-            <span>💰 {{ opportunity.salary_range }}</span>
-            {% endif %}
+<!-- Assessment Interface in opportunity_detail.html -->
+{% if user_profile.user_type == 'company' and user_profile.company_id == opportunity.company_id %}
+<div class="assessment-section">
+    <div class="assessment-header">
+        <h2 class="assessment-title">🎯 Candidate Assessment</h2>
+        <div class="assessment-stats">
+            <span class="stat-item">
+                <strong>{{ applications_count }}</strong> 
+                candidate{{ 's' if applications_count != 1 else '' }} applied
+            </span>
         </div>
     </div>
     
-    <div class="opportunity-body">
-        <div class="opportunity-description">
-            {{ opportunity.description[:200] }}{% if opportunity.description|length > 200 %}...{% endif %}
+    <div class="assessment-chat-container">
+        <div id="assessment-chat-messages" class="assessment-chat-messages">
+            <div class="welcome-message">
+                <p><strong>👋 Hi! I'm your AI candidate assessment assistant.</strong></p>
+                <p>I can help you <strong>evaluate applicants</strong>, <strong>rank candidates</strong>, and <strong>suggest interview questions</strong> based on their survey responses and job requirements.</p>
+                {% if applications_count and applications_count > 0 %}
+                <p><strong>{{ applications_count }} candidate{{ 's' if applications_count != 1 else '' }}</strong> ha{{ 've' if applications_count != 1 else 's' }} applied to this position. How would you like to assess them?</p>
+                {% else %}
+                <p>No applications yet, but you can still prepare assessment criteria and interview questions for when candidates apply.</p>
+                {% endif %}
+            </div>
         </div>
         
-        {% if opportunity.employment_type or opportunity.location %}
-        <div class="opportunity-tags">
-            {% if opportunity.employment_type %}
-            <span class="tag">{{ opportunity.employment_type | title }}</span>
-            {% endif %}
-            {% if opportunity.location %}
-            <span class="tag">{{ opportunity.location }}</span>
-            {% endif %}
-        </div>
-        {% endif %}
-        
-        <div class="button-container">
-            <button>View Details & Apply →</button>
-        </div>
+        <form class="assessment-chat-form" 
+              hx-post="/api/opportunities/{{ opportunity.id }}/assess" 
+              hx-target="#assessment-chat-messages" 
+              hx-swap="beforeend"
+              hx-trigger="submit" 
+              hx-indicator=".assessment-loading-indicator">
+            <input type="text" 
+                   name="message" 
+                   class="assessment-chat-input"
+                   placeholder="Ask me to evaluate candidates, rank applicants, or suggest interview questions..." 
+                   required 
+                   autocomplete="off">
+            <button type="submit">
+                Assess
+                <span class="htmx-indicator assessment-loading-indicator"> ...</span>
+            </button>
+        </form>
     </div>
-</div>
-```
-
-### Enhanced HTMX Patterns - UPDATED
-```html
-<!-- Dynamic User Type Form Switching -->
-<div class="user-type-selector">
-    <button class="user-type-btn selected" 
-            hx-get="/api/form-fields/talent" 
-            hx-target="#form-fields"
-            hx-swap="innerHTML"
-            onclick="document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected')); this.classList.add('selected');">
-        I'm Looking for Work
-    </button>
-    <button class="user-type-btn" 
-            hx-get="/api/form-fields/company" 
-            hx-target="#form-fields"
-            hx-swap="innerHTML"
-            onclick="document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected')); this.classList.add('selected');">
-        I'm Hiring
-    </button>
-</div>
-
-<!-- Loading Indicators -->
-<button type="submit">
-    Send
-    <span class="htmx-indicator loading-indicator"> ...</span>
-</button>
-
-<!-- Auto-scroll Chat Implementation -->
-<script>
-document.body.addEventListener('htmx:afterRequest', function (event) {
-    if (event.detail.xhr.status === 200 && event.detail.elt.matches('.chat-form')) {
-        event.detail.elt.reset();
-        
-        // Scroll to bottom of chat
-        const chatMessages = document.getElementById('chat-messages');
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-});
-</script>
-```
-
-### Component Architecture Pattern - NEW
-```html
-<!-- Shared Header Component Usage -->
-{% include "components/header.html" %}
-
-<!-- Back Navigation Pattern -->
-<a href="/dashboard" class="back-link">← Back to Dashboard</a>
-
-<!-- Empty State Handling -->
-{% if opportunities %}
-<div class="opportunities-grid">
-    {% for opportunity in opportunities %}
-    <!-- Opportunity cards -->
-    {% endfor %}
-</div>
-{% else %}
-<div class="no-opportunities">
-    <h2>No Opportunities Available</h2>
-    <p>Check back later for new job opportunities!</p>
-    <p style="margin-top: 2rem;">
-        <a href="/dashboard" style="color: #6366f1; text-decoration: none; font-weight: 500;">
-            ← Return to Dashboard
-        </a>
-    </p>
 </div>
 {% endif %}
 ```
 
-## Environment Configuration - CRITICAL SETUP
+### Assessment Agent Tool Pattern - NEW
 ```python
-import os
-from dotenv import load_dotenv
+# job_matching_agent/assessment_agent.py
+from google.adk.agents import LlmAgent
+from typing import List, Dict, Any
 
-load_dotenv()
+def analyze_candidate_fit(opportunity_data: Dict[str, Any], application: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze how well a candidate fits an opportunity based on their survey responses"""
+    
+    survey_responses = application.get('survey_responses', {})
+    opportunity_requirements = opportunity_data.get('requirements', '')
+    opportunity_description = opportunity_data.get('description', '')
+    
+    # Extract survey questions and responses for analysis
+    survey_analysis = []
+    survey_questions = opportunity_data.get('survey_questions', [])
+    
+    for i, question in enumerate(survey_questions):
+        # Handle both string and dictionary formats for survey questions
+        if isinstance(question, dict):
+            # Dictionary format: {"question": "text", "type": "text", "required": True}
+            question_text = question.get('question', f'Question {i+1}')
+            question_type = question.get('type', 'text')
+        else:
+            # String format: "question text"
+            question_text = str(question)
+            question_type = 'text'
+        
+        question_key = f"question_{i}"
+        response = survey_responses.get(question_key, "No response provided")
+        
+        survey_analysis.append({
+            "question": question_text,
+            "type": question_type,
+            "response": response,
+            "response_quality": "poor" if not response or response.lower().strip() in ["", "n/a", "none", "i don't know", "i can't remember"] else "good"
+        })
+    
+    # Analyze overall candidate fit
+    total_questions = len(survey_analysis)
+    good_responses = sum(1 for q in survey_analysis if q["response_quality"] == "good")
+    response_rate = (good_responses / total_questions) if total_questions > 0 else 0
+    
+    # Determine fit level
+    if response_rate >= 0.8:
+        fit_level = "excellent"
+    elif response_rate >= 0.6:
+        fit_level = "good"
+    elif response_rate >= 0.4:
+        fit_level = "fair"
+    else:
+        fit_level = "poor"
+    
+    return {
+        "candidate_id": application.get('candidate_id', 'unknown'),
+        "fit_level": fit_level,
+        "response_rate": response_rate,
+        "survey_analysis": survey_analysis,
+        "requirements_match": opportunity_requirements,
+        "job_description": opportunity_description,
+        "total_questions": total_questions,
+        "good_responses": good_responses
+    }
 
-# Required environment variables for ADK
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")  # REQUIRED
-GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")  # REQUIRED
-GOOGLE_GENAI_USE_VERTEXAI = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "true")  # REQUIRED
-
-# Firebase
-FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "config/firebase-credentials.json")
-
-# ADK Configuration (optional)
-ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
-
-# Validation
-required_vars = ["GOOGLE_CLOUD_PROJECT"]
-for var_name in required_vars:
-    if not os.getenv(var_name):
-        raise ValueError(f"Required environment variable {var_name} is not set")
-```
-
-### .env.example Template - UPDATED WITH CORRECT VARIABLES
-```bash
-# Environment
-ENVIRONMENT=development
-
-# Google Cloud - REQUIRED for ADK/Vertex AI
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-GOOGLE_GENAI_USE_VERTEXAI=true
-
-# Firebase Authentication
-# DEVELOPMENT: Use JSON service account file (downloaded from Firebase Console)
-FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
-
-# PRODUCTION: Use Cloud Run's built-in service account (recommended)
-# - Don't set FIREBASE_CREDENTIALS_PATH in production
-# - Cloud Run automatically provides authentication
-# - More secure than embedding JSON files in containers
-
-# ADK Configuration (optional)
-ADK_BUCKET_NAME=your-bucket-name
-
-# Cloud Run Deployment Settings
-PORT=8080                    # Cloud Run uses port 8080
-MAINTENANCE_MODE=false       # Set to 'true' for maintenance mode deployment
-```
-
-## Google Cloud Setup - CRITICAL STEPS
-
-### 1. Enable Required APIs
-Before running the application, you MUST enable these APIs in Google Cloud Console:
-```bash
-# Visit these URLs to enable APIs:
-# https://console.developers.google.com/apis/api/aiplatform.googleapis.com/overview?project=YOUR_PROJECT_ID
-# https://console.developers.google.com/apis/api/vertexai.googleapis.com/overview?project=YOUR_PROJECT_ID
-```
-
-### 2. Authentication Setup
-```bash
-# Install Google Cloud SDK
-brew install google-cloud-sdk  # macOS
-# or follow instructions for other platforms
-
-# Authenticate
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project YOUR_PROJECT_ID
-```
-
-### 3. Project Configuration
-Ensure your Google Cloud project has:
-- ✅ Vertex AI API enabled
-- ✅ Application Default Credentials configured
-- ✅ Project ID set in environment variables
-
-## Development Dependencies (pyproject.toml)
-```toml
-[project]
-name = "laiers"
-version = "0.1.0"
-dependencies = [
-    "google-adk",           # Primary dependency - provides FastAPI integration
-    "fastapi",
-    "jinja2", 
-    "python-multipart",
-    "google-cloud-firestore", 
-    "firebase-admin",
-    "pydantic[email]",
-    "python-dotenv",
-    "uvicorn[standard]",
-    "httpx"                 # For internal ADK API calls
-]
-
-[tool.uv]
-dev-dependencies = [
-    "pytest",
-    "black", 
-    "ruff"
-]
+assessment_agent = LlmAgent(
+    name="assessment_agent",
+    model="gemini-2.0-flash-lite",
+    instruction="""You are a candidate assessment specialist...""",
+    tools=[
+        FunctionTool(analyze_candidate_fit),
+        FunctionTool(rank_candidates),
+        FunctionTool(generate_interview_questions)
+    ]
+)
 ```
 
 ## Development URLs and Endpoints
@@ -533,13 +483,14 @@ dev-dependencies = [
 - **Login**: `http://localhost:8000/login`
 - **Dashboard**: `http://localhost:8000/dashboard` (requires auth)
 
-### Opportunity Management URLs - NEW FEATURE
+### Opportunity Management URLs - UPDATED WITH ASSESSMENT
 - **Company Portal**: `http://localhost:8000/company/{company_id}` - Company page with opportunities list
 - **Create Opportunity**: `http://localhost:8000/company/{company_id}/opportunities/create` - AI-guided creation
 - **Browse Opportunities**: `http://localhost:8000/opportunities` - All opportunities (talent users)
-- **Opportunity Details**: `http://localhost:8000/opportunities/{opportunity_id}` - Job details + application
+- **Opportunity Details**: `http://localhost:8000/opportunities/{opportunity_id}` - Job details + application + assessment
 - **Apply to Opportunity**: `POST /api/opportunities/{opportunity_id}/apply` - Submit application
 - **Create Opportunity API**: `POST /api/opportunities/create` - HTMX chat during creation
+- **Assess Candidates API**: `POST /api/opportunities/{opportunity_id}/assess` - HTMX assessment chat
 
 ### ADK Integration URLs - VERIFIED WORKING
 - **ADK Dev UI**: `http://localhost:8000/adk/dev-ui/` (note trailing slash!)
@@ -556,30 +507,37 @@ dev-dependencies = [
 ### What to ALWAYS do:
 - **ADK Integration**: Mount ADK app under `/adk` prefix, never replace main app
 - **Agent Structure**: Use required `job_matching_agent/` directory with `root_agent` variable
+- **Sub-Agent Architecture**: Use AgentTool to integrate job_posting_agent and assessment_agent
 - **Template Organization**: Two-panel dashboard (profile + chat), component-based HTMX responses
+- **Assessment Feature**: Include assessment interface on opportunity detail pages for company users
 - **Firebase Auth**: Use session cookies, not JWT tokens in requests
-- **Context Passing**: Always pass user context to ADK agent (user_type, etc.)
+- **Context Passing**: Always pass user context to ADK agent (user_type, task, etc.)
 - **Error Handling**: Use try/except blocks with proper logging
 - **HTMX Patterns**: Form-based chat interface, partial template responses
 - **Environment Config**: Load all config from environment variables with proper validation
 - **Google Cloud Setup**: Always verify Vertex AI API is enabled before deployment
 - **ADK Communication**: Use HTTP client to call ADK endpoints internally, not direct imports
+- **Data Format Handling**: Make assessment tools robust to handle both string and dict formats
 
 ### Template Patterns:
 - **Dashboard**: Two-panel grid layout (profile left, chat right)
 - **Chat Interface**: HTMX form with `hx-post="/api/chat"` targeting messages container
+- **Assessment Interface**: Specialized chat for candidate evaluation on opportunity detail pages
 - **HTMX Responses**: Return `components/chat_message.html` for new messages
 - **Mobile Responsive**: Grid collapses to single column on mobile
 - **User Context**: Show different chat welcome based on user_type
+- **Conditional Features**: Show assessment interface only to company users who own the opportunity
 
 ### ADK-Specific Rules - UPDATED BASED ON TESTING:
 - **Agent Discovery**: ADK looks for `root_agent` variable in agent directory
+- **Sub-Agent Integration**: Use AgentTool to mount sub-agents as tools
 - **Mounting**: Mount ADK app under path, don't replace main FastAPI app
 - **Dev UI**: Always accessible at `/adk/dev-ui/` (with trailing slash)
 - **Agent Communication**: Use HTTP calls to `/adk/run` endpoint, not direct Runner imports
 - **Environment Variables**: Must have `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`
 - **API Dependencies**: Vertex AI API must be enabled in Google Cloud Console
 - **Authentication**: Use Application Default Credentials (gcloud auth application-default login)
+- **Timeout Handling**: Use 30-second timeouts for complex agent operations like assessment
 
 ### What to NEVER suggest:
 - **Replacing ADK patterns**: Don't suggest alternatives to ADK's agent structure
@@ -589,11 +547,12 @@ dev-dependencies = [
 - **Microservices**: Single application with mounted sub-apps only
 - **Different agent frameworks**: ADK only, no LangChain/CrewAI alternatives
 - **Direct ADK imports**: Use HTTP API calls, not direct Python imports of ADK classes
+- **Assessment without sub-agents**: Always use assessment_agent for candidate evaluation
 
 ### Error Handling Pattern - UPDATED:
 ```python
 try:
-    # ADK agent interaction via HTTP
+    # ADK agent interaction via HTTP with proper timeout
     payload = {
         "appName": "job_matching_agent",
         "userId": user["uid"],
@@ -602,7 +561,7 @@ try:
         "streaming": False
     }
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:  # Extended timeout for assessment
         response = await client.post("http://localhost:8000/adk/run", json=payload)
         if response.status_code == 200:
             agent_data = response.json()
@@ -624,104 +583,69 @@ except Exception as e:
     })
 ```
 
-## Cloud Run Deployment - PRODUCTION READY
-
-### Complete Deployment System
-The application includes a full Cloud Run deployment system with maintenance mode:
-
-**Key Files:**
-- **`Dockerfile`**: UV-optimized container for Cloud Run
-- **`.dockerignore`**: Optimized build context exclusions
-- **`deployment/deploy.sh`**: Full-featured deployment script
-- **`deployment/quick-deploy.sh`**: Quick commands for common operations
-- **`deployment/README.md`**: Comprehensive deployment documentation
-- **`utils/middleware.py`**: Maintenance mode middleware
-
-### Maintenance Mode System
-- **Safe Deployments**: Deploy in maintenance mode first
-- **Professional UI**: Beautiful "Coming Soon" page during maintenance
-- **Health Checks**: Always accessible even during maintenance (`/health`, `/_ah/health`)
-- **Instant Toggle**: Switch live/maintenance without rebuilding
-- **Environment Control**: Uses `MAINTENANCE_MODE` environment variable
-
-### Deployment Commands
-```bash
-# Quick deployment workflow
-./deployment/quick-deploy.sh deploy      # Deploy in maintenance mode
-./deployment/quick-deploy.sh live        # Make app live
-./deployment/quick-deploy.sh maintenance # Back to maintenance mode
-./deployment/quick-deploy.sh url         # Get service URL
-./deployment/quick-deploy.sh logs        # View logs
-
-# Full-featured commands
-./deployment/deploy.sh deploy            # Deploy with all options
-./deployment/deploy.sh status            # Service status
-./deployment/deploy.sh logs              # Comprehensive logs
-```
-
-### Production Configuration
-- **Application Default Credentials**: No JSON files in containers
-- **Environment Variables**: All config via Cloud Run environment
-- **Auto-scaling**: Scales to zero for cost optimization
-- **Health Monitoring**: Multiple health check endpoints
-- **Security**: Non-root container user, minimal attack surface
-
 ## Development Focus - UPDATED
 - **Professional Product**: Focus on polished user experience with consistent branding
 - **User Types**: "company" and "talent" with sophisticated user flows
 - **Context-Aware Agent**: Agent adapts responses based on user_type and context
+- **Sub-Agent Architecture**: Specialized agents for job posting and candidate assessment
 - **Component-Based UI**: Reusable templates and consistent design patterns
 - **Card-Based Browsing**: Modern interface for opportunity discovery
+- **Assessment Features**: Comprehensive candidate evaluation tools for company users
 - **Responsive Design**: Mobile-friendly multi-section layouts
 - **Opportunity Management**: Complete job posting and application workflow with rich metadata
 - **AI-Guided Creation**: Use ADK agent for structured opportunity creation
+- **AI-Powered Assessment**: Use specialized assessment agent for candidate evaluation
 - **HTMX Interactions**: Dynamic forms with loading states and auto-scroll
 - **Firestore Integration**: All data stored in Firestore collections
 - **Production Ready**: Complete Cloud Run deployment with maintenance mode
-
-## UI/UX Design Patterns - NEW
-
-### Layout Patterns:
-- **Multi-section Dashboard**: Title container + user info + content grid
-- **Card-based Browsing**: Grid layouts with rich metadata display
-- **Progressive Enhancement**: HTMX for dynamic behavior, functional without JS
-- **Mobile-first Responsive**: Graceful degradation on smaller screens
-
-### Branding Consistency:
-- **Logo Placement**: Consistent sizing and positioning across pages
-- **Color Scheme**: Primary indigo (#6366f1) for interactive elements
-- **Typography**: Clear hierarchy with semantic HTML
-- **Icon Usage**: Emoji icons for visual context (📍, 💼, 💰, 🤖)
-
-### Interaction Patterns:
-- **Loading States**: Visual feedback during HTMX requests
-- **Form Validation**: Inline error messages with HTMX
-- **Auto-scroll**: Smooth chat message scrolling
-- **Click Targets**: Large clickable areas for cards and buttons
-
-### Component System:
-- **Shared Header**: Consistent navigation across pages
-- **Reusable Cards**: Standardized content presentation
-- **Form Components**: Consistent form styling and behavior
-- **Message Components**: Standardized chat and error displays
 
 ## Common Mistakes to Avoid - UPDATED
 - **Wrong ADK mounting**: Don't use ADK app as main app, mount under `/adk`
 - **Missing trailing slash**: ADK dev UI needs `/adk/dev-ui/` not `/adk/dev-ui`
 - **Agent structure**: Must have `job_matching_agent/` directory with `root_agent`
+- **Missing sub-agents**: Include job_posting_agent and assessment_agent as tools
 - **Template context**: Always pass `request` object to template responses
 - **User context**: Don't forget to pass user_type to agent for personalization
+- **Assessment access**: Only show assessment interface to company users who own the opportunity
+- **Data format assumptions**: Make assessment tools handle both string and dict formats
 - **HTMX targets**: Use correct selectors for message container updates
 - **Environment variables**: Use `GOOGLE_CLOUD_LOCATION` not `VERTEX_AI_LOCATION`
 - **API not enabled**: Always check Vertex AI API is enabled in Google Cloud Console
 - **Authentication**: Must run `gcloud auth application-default login`
 - **Direct imports**: Don't import ADK classes directly, use HTTP API
+- **Timeout issues**: Use 30-second timeouts for complex operations like assessment
 - **Branding inconsistency**: Always use established logo sizing and color schemes
 - **Component duplication**: Use shared components instead of duplicating header/footer code
 - **Missing loading states**: Always provide visual feedback for HTMX requests
 - **Broken responsive design**: Test grid layouts collapse properly on mobile
 
 ## Troubleshooting - CRITICAL ISSUES
+
+### Assessment Feature Issues - NEW
+
+**Assessment Agent Not Working:**
+1. **Check Sub-Agent Structure**: Ensure `assessment_agent.py` exists with proper tools
+2. **Verify AgentTool Integration**: Confirm assessment_agent is mounted as tool in root_agent
+3. **Data Format Issues**: Check if survey questions are strings vs dictionaries
+4. **Timeout Problems**: Increase timeout to 30 seconds for complex assessments
+5. **Access Control**: Verify company user owns the opportunity being assessed
+
+**Assessment UI Not Showing:**
+1. **Template Conditional**: Check user_type == 'company' and company_id matches
+2. **Applications Count**: Verify applications are being retrieved from Firestore
+3. **CSS Loading**: Ensure opportunity-detail.css includes assessment styles
+4. **HTMX Endpoint**: Confirm `/api/opportunities/{id}/assess` endpoint exists
+
+**Assessment Data Errors:**
+```python
+# Common fix for survey question format issues
+for i, question in enumerate(survey_questions):
+    # Handle both string and dictionary formats
+    if isinstance(question, dict):
+        question_text = question.get('question', f'Question {i+1}')
+    else:
+        question_text = str(question)  # Convert string format
+```
 
 ### ADK Agent Not Working (500 Error)
 1. **Check Vertex AI API**: Visit `https://console.developers.google.com/apis/api/aiplatform.googleapis.com/overview?project=YOUR_PROJECT_ID`
@@ -737,49 +661,6 @@ This is NORMAL behavior. ADK reuses existing sessions. Only worry if message sen
 - Wait 2-3 minutes after enabling
 - Verify project ID matches in environment variables
 
-### Cloud Run Deployment Issues - NEW TROUBLESHOOTING
+When writing code, always reference these ADK integration patterns with sub-agent architecture. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer. **Always verify Google Cloud setup before troubleshooting code issues.**
 
-**1. Project ID vs Project Number Error**
-```bash
-# Fix gcloud config to use project ID, not project number
-gcloud config set project your-project-id  # Use string, not number
-gcloud auth application-default set-quota-project your-project-id
-```
-
-**2. Container Build Failures**
-- **Missing uv.lock**: Ensure `uv.lock` is NOT in `.dockerignore`
-- **Permission Issues**: Dependencies installed as root in Dockerfile
-- **Port Configuration**: Use `--port=8080`, not `PORT=8080` environment variable
-
-**3. Container Startup Failures**
-- **Firebase Config**: Use Application Default Credentials in production
-- **Environment Variables**: Set all required variables during deployment
-- **Project ID Missing**: Ensure `GOOGLE_CLOUD_PROJECT` is set in Cloud Run
-
-**4. Environment Variable Loss During Updates**
-```bash
-# WRONG - loses other environment variables
-gcloud run services update SERVICE --set-env-vars="MAINTENANCE_MODE=true"
-
-# CORRECT - preserves all environment variables
-gcloud run services update SERVICE --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=project-id,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=true"
-```
-
-**5. Deployment Debug Commands**
-```bash
-# Check service status
-./deployment/deploy.sh status
-
-# View deployment logs
-./deployment/deploy.sh logs
-
-# Test health endpoint
-curl "$(./deployment/quick-deploy.sh url)/health"
-
-# Check environment variables
-gcloud run services describe SERVICE_NAME --region us-central1 --format="yaml" | grep -A 20 "env:"
-```
-
-When writing code, always reference these ADK integration patterns. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer. **Always verify Google Cloud setup before troubleshooting code issues.**
-
-**For deployment issues, check `deployment/README.md` for comprehensive troubleshooting guide.**
+**For assessment features, ensure proper sub-agent integration and data format handling.**

@@ -176,6 +176,7 @@ Once the application is running, you can access these different interfaces:
 - **Create Opportunity**: `POST /api/opportunities/create` - HTMX endpoint for AI-guided creation
 - **Apply to Job**: `POST /api/opportunities/{opportunity_id}/apply` - Submit job application
 - **Dynamic Form Fields**: `GET /api/form-fields/{user_type}` - HTMX dynamic form switching
+- **Assessment**: `POST /api/opportunities/{opportunity_id}/assess` - Submit candidate assessment
 
 ## Project Architecture
 
@@ -183,10 +184,58 @@ Once the application is running, you can access these different interfaces:
 The application uses Google's Agent Development Kit (ADK) to power the AI agent functionality:
 
 - **Agent Structure**: The job matching agent is defined in `job_matching_agent/agent.py`
+- **Sub-Agent Architecture**: Specialized sub-agents for job posting and candidate assessment
 - **FastAPI Integration**: ADK provides a pre-configured FastAPI app mounted under `/adk`
 - **Custom UI**: The main application provides professional branded authentication and user interface
 - **Chat Interface**: Users interact with the agent through a sophisticated HTMX-powered chat interface with loading states
 - **Vertex AI Backend**: Uses Gemini models via Google Cloud Vertex AI
+
+### Agent Architecture
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                   Root Agent                                        │
+│                              job_matching_agent                                     │
+│                                                                                     │
+│  • Main orchestration and routing                                                  │
+│  • User context management (talent vs company)                                     │
+│  • Task delegation to specialized sub-agents                                       │
+│  • General job matching guidance and support                                       │
+│                                                                                     │
+│  ┌─────────────────────────────────┐    ┌─────────────────────────────────┐      │
+│  │         Sub-Agent               │    │         Sub-Agent               │      │
+│  │     job_posting_agent           │    │     assessment_agent            │      │
+│  │                                 │    │                                 │      │
+│  │ • AI-guided job creation        │    │ • Candidate evaluation          │      │
+│  │ • Structured opportunity data   │    │ • Survey response analysis      │      │
+│  │ • Survey question generation    │    │ • Candidate ranking             │      │
+│  │ • Requirements optimization     │    │ • Interview recommendations     │      │
+│  │ • Soft skills identification    │    │ • Strengths/weaknesses analysis │      │
+│  │                                 │    │ • Red flag detection            │      │
+│  │ Tools:                          │    │                                 │      │
+│  │ • create_opportunity_structure  │    │ Tools:                          │      │
+│  │ • generate_survey_questions     │    │ • analyze_candidate_fit         │      │
+│  │ • validate_job_requirements     │    │ • rank_candidates               │      │
+│  │                                 │    │ • generate_interview_questions  │      │
+│  └─────────────────────────────────┘    └─────────────────────────────────┘      │
+│                                                                                     │
+│  Triggered by:                           Triggered by:                            │
+│  • Task: create_opportunity              • Task: assess_candidates                │
+│  • Company user context                  • Company user context                   │
+│  • /api/opportunities/create             • /api/opportunities/{id}/assess         │
+│                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                            │
+                                            ▼
+                                   ┌─────────────────┐
+                                   │   Data Flow     │
+                                   │                 │
+                                   │ Firestore       │
+                                   │ • opportunities │
+                                   │ • applications  │
+                                   │ • users         │
+                                   │ • companies     │
+                                   └─────────────────┘
+```
 
 ### Enhanced User Flow
 
@@ -206,7 +255,8 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
 5. **Company Portal** - Comprehensive company dashboard with opportunities management
 6. **AI-Guided Job Creation** - Sophisticated chat interface for creating structured job postings
 7. **Opportunity Management** - View, edit, and manage posted opportunities
-8. **Application Review** - Review candidate applications and survey responses
+8. **Candidate Assessment** - AI-powered evaluation interface for reviewing applications
+9. **Application Review** - Comprehensive candidate analysis with ranking and interview recommendations
 
 #### Talent User Journey
 5. **Opportunity Discovery** - Card-based browsing interface with rich job metadata
@@ -243,16 +293,19 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
 │ • Jinja2 HTML   │    │ • Firebase Auth  │    │ • Firestore     │
 │ • Professional  │    │ • ADK Mount      │    │ • ADK Backend   │
 │   UI Components │    │ • Component Sys  │    │ • Cloud Storage │
+│ • Assessment UI │    │ • Assessment API │    │ • Sub-Agents    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                 │
                                 ▼
                        ┌──────────────────┐
                        │ ADK Agent        │
                        │ /adk/*           │
-                       │ • Agent Logic    │
+                       │ • Root Agent     │
+                       │ • Sub-Agents     │
                        │ • Session Mgmt   │
                        │ • LLM Interface  │
                        │ • Job Matching   │
+                       │ • Assessment     │
                        └──────────────────┘
 ```
 
@@ -309,6 +362,123 @@ The ADK agent provides intelligent opportunity management:
 4. **Content Optimization**: Suggests improvements to job descriptions
 5. **Matching Insights**: Provides hiring recommendations based on applications
 
+## Assessment System
+
+The application features a comprehensive AI-powered candidate assessment system that helps company users evaluate job applicants efficiently and objectively.
+
+### Key Features
+
+#### Assessment Sub-Agent
+- **Specialized AI Assistant**: Dedicated assessment_agent for candidate evaluation
+- **Survey Response Analysis**: Deep analysis of candidate answers against job requirements
+- **Candidate Ranking**: Objective scoring and ranking of applicants
+- **Interview Recommendations**: Tailored interview questions for each candidate
+- **Red Flag Detection**: Identification of concerning responses or gaps
+- **Strengths Analysis**: Highlighting candidate qualifications and potential
+
+#### Assessment Interface
+- **Integrated Chat Interface**: Seamlessly integrated into opportunity detail pages
+- **Company User Access**: Only visible to company users who own the opportunity
+- **Real-time Analysis**: Instant AI-powered insights and recommendations
+- **Application Statistics**: Clear display of candidate count and application status
+- **Professional UI**: Consistent with the overall application design
+
+### Assessment Workflow
+
+#### For Company Users:
+1. **Access Assessment**: Navigate to any opportunity detail page they own
+2. **View Application Stats**: See number of candidates who have applied
+3. **Request Analysis**: Ask the AI to evaluate specific candidates or all applicants
+4. **Receive Insights**: Get comprehensive evaluations including:
+   - Candidate ranking and fit assessment
+   - Strengths and weaknesses analysis
+   - Response quality evaluation
+   - Interview question recommendations
+   - Hiring recommendations
+
+#### Assessment Capabilities:
+- **Individual Evaluation**: "Assess candidate John Smith's responses"
+- **Bulk Analysis**: "Rank all candidates for this position"
+- **Comparative Analysis**: "Compare the top 3 candidates"
+- **Interview Preparation**: "Suggest interview questions for Sarah Johnson"
+- **Red Flag Identification**: "Are there any concerning responses?"
+- **Skill Matching**: "Which candidates best match our requirements?"
+
+### Technical Implementation
+
+#### Assessment Agent Architecture
+```python
+# job_matching_agent/assessment_agent.py
+assessment_agent = LlmAgent(
+    name="assessment_agent",
+    model="gemini-2.0-flash-lite",
+    instruction="""You are a candidate assessment specialist...""",
+    tools=[
+        FunctionTool(analyze_candidate_fit),
+        FunctionTool(rank_candidates),
+        FunctionTool(generate_interview_questions)
+    ]
+)
+```
+
+#### Data Processing
+- **Robust Format Handling**: Supports both string and dictionary survey question formats
+- **Response Quality Analysis**: Evaluates completeness and relevance of candidate answers
+- **Scoring Algorithms**: Objective assessment based on job requirements and response quality
+- **Context Preservation**: Maintains job description and requirements throughout evaluation
+
+#### API Integration
+- **Dedicated Endpoint**: `POST /api/opportunities/{opportunity_id}/assess`
+- **HTMX Interface**: Real-time chat interface with loading states
+- **Access Control**: Secure access limited to opportunity owners
+- **Error Handling**: Graceful failure handling with user-friendly messages
+
+### Assessment UI Components
+
+#### Assessment Chat Interface
+```html
+<!-- Professional assessment interface -->
+<div class="assessment-section">
+    <div class="assessment-header">
+        <h2 class="assessment-title">🎯 Candidate Assessment</h2>
+        <div class="assessment-stats">
+            <span class="stat-item">
+                <strong>{{ applications_count }}</strong> 
+                candidate{{ 's' if applications_count != 1 else '' }} applied
+            </span>
+        </div>
+    </div>
+    
+    <div class="assessment-chat-container">
+        <!-- Chat messages and input form -->
+    </div>
+</div>
+```
+
+#### Features
+- **Application Statistics**: Real-time display of candidate count
+- **Professional Styling**: Consistent with application design system
+- **Loading Indicators**: Visual feedback during AI processing
+- **Auto-scroll**: Smooth scrolling for chat interactions
+- **Mobile Responsive**: Optimized for all screen sizes
+
+### Assessment Examples
+
+#### Sample Interactions:
+- **"Evaluate all candidates for this position"** → Comprehensive ranking with scores
+- **"What are the red flags in the applications?"** → Identification of concerning responses
+- **"Suggest interview questions for the top candidate"** → Tailored interview preparation
+- **"Compare John and Sarah's qualifications"** → Side-by-side candidate analysis
+- **"Who has the best communication skills?"** → Skill-specific assessment
+
+#### Assessment Output:
+- **Candidate Rankings**: Objective scoring from 1-10
+- **Fit Analysis**: Match percentage against job requirements
+- **Response Quality**: Evaluation of answer completeness and relevance
+- **Strengths/Weaknesses**: Balanced assessment of candidate qualities
+- **Interview Recommendations**: Specific questions to explore with each candidate
+- **Hiring Advice**: Clear recommendations on next steps
+
 ## Project Structure
 
 ```
@@ -316,7 +486,9 @@ laiers/
 ├── main.py                     # Main FastAPI application with ADK integration
 ├── job_matching_agent/         # ADK agent directory (REQUIRED structure)
 │   ├── __init__.py            # Must contain: from . import agent
-│   └── agent.py               # Job matching agent definition (root_agent variable)
+│   ├── agent.py               # Job matching agent definition (root_agent variable)
+│   ├── job_posting_agent.py   # Sub-agent for AI-guided job creation
+│   └── assessment_agent.py    # Sub-agent for candidate evaluation and ranking
 ├── utils/                     # Utility modules
 │   ├── __init__.py
 │   ├── firestore.py           # Enhanced Firestore operations + opportunity management
@@ -332,7 +504,7 @@ laiers/
 │   ├── company.html          # Company portal with opportunity management
 │   ├── opportunities_list.html # Card-based opportunity browsing
 │   ├── create_opportunity.html # AI-guided opportunity creation
-│   ├── opportunity_detail.html # Detailed job view with application form
+│   ├── opportunity_detail.html # Detailed job view with application form + assessment interface
 │   └── components/           # Reusable template components
 │       ├── header.html       # Shared header component
 │       ├── chat_message.html # Chat message component
@@ -348,7 +520,7 @@ laiers/
 │   │   ├── opportunities.css # Opportunity browsing styles
 │   │   ├── company.css       # Company portal styles
 │   │   ├── create-opportunity.css # Opportunity creation styles
-│   │   └── opportunity-detail.css # Job detail page styles
+│   │   └── opportunity-detail.css # Job detail page + assessment interface styles
 │   └── images/
 │       ├── logo_laiers.png   # Main Laiers.ai logo
 │       └── favicon.ico       # Site favicon
@@ -398,9 +570,43 @@ Multiple testing approaches for the sophisticated agent system:
 1. **Automated Verification**: `http://localhost:8000/test/adk-complete-flow` - Complete workflow test
 2. **Interactive Dashboard**: Professional chat interface at `/dashboard` with loading states
 3. **Opportunity Creation**: AI-guided job creation at `/company/{company_id}/opportunities/create`
-4. **ADK Dev Interface**: Development tools at `/adk/dev-ui/` for direct agent testing
-5. **API Testing**: Direct API calls to `/adk/run` with structured payloads
-6. **Component Testing**: Individual component functionality through specialized endpoints
+4. **Assessment Interface**: Candidate evaluation at `/opportunities/{opportunity_id}` (company users only)
+5. **ADK Dev Interface**: Development tools at `/adk/dev-ui/` for direct agent testing
+6. **API Testing**: Direct API calls to `/adk/run` with structured payloads
+7. **Component Testing**: Individual component functionality through specialized endpoints
+
+#### Testing Assessment Features
+
+**Prerequisites for Assessment Testing:**
+1. **Company User Account**: Register as a company user
+2. **Published Opportunity**: Create at least one job opportunity
+3. **Candidate Applications**: Have talent users apply to the opportunity
+4. **Survey Responses**: Ensure applications include survey responses
+
+**Assessment Test Workflow:**
+```bash
+# 1. Create test opportunity with company user
+curl -X POST http://localhost:8000/api/opportunities/create \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "company_id=company_1&message=Create a Senior Developer position"
+
+# 2. Apply as talent user with survey responses
+curl -X POST http://localhost:8000/api/opportunities/{opportunity_id}/apply \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "question_0=I have 5 years experience...&question_1=Led a team of 3..."
+
+# 3. Test assessment interface (company user)
+curl -X POST http://localhost:8000/api/opportunities/{opportunity_id}/assess \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "message=Evaluate all candidates for this position"
+```
+
+**Assessment UI Testing:**
+1. **Access Control**: Verify assessment interface only shows for opportunity owners
+2. **Application Count**: Confirm candidate statistics display correctly
+3. **Chat Interface**: Test assessment chat functionality and loading states
+4. **Response Quality**: Verify AI provides comprehensive candidate evaluations
+5. **Mobile Responsive**: Test assessment interface on various screen sizes
 
 ### Professional Firebase Configuration
 
@@ -430,6 +636,7 @@ Both configurations support the sophisticated user flows and opportunity managem
 - `/test/adk-complete-flow` returns `"message_send": {"status_code": 500}`
 - Agent responses fail in dashboard chat interface
 - Opportunity creation chat interface not working
+- Assessment interface returns errors
 
 **Enhanced Solutions:**
 ```bash
@@ -458,7 +665,99 @@ print('Vertex AI:', os.getenv('GOOGLE_GENAI_USE_VERTEXAI'))
 gcloud auth application-default print-access-token | head -c 50
 ```
 
-#### 2. UI Component and HTMX Issues
+#### 2. Assessment Feature Issues (NEW)
+
+**Symptoms:**
+- Assessment interface not visible on opportunity detail pages
+- Assessment chat returns errors or timeouts
+- Candidate evaluation responses are incomplete or incorrect
+- Applications count shows 0 when applications exist
+
+**Assessment-Specific Solutions:**
+
+**A. Assessment Interface Not Showing:**
+```bash
+# Check user access and company ownership
+python -c "
+import asyncio
+from utils.firestore import FirestoreService
+
+async def check_access():
+    fs = FirestoreService()
+    
+    # Check opportunity ownership
+    opportunity = await fs.get_opportunity('your_opportunity_id')
+    print('Opportunity company_id:', opportunity.get('company_id'))
+    
+    # Check user profile
+    user_profile = await fs.get_user_profile('your_user_id')
+    print('User company_id:', user_profile.get('company_id'))
+    print('User type:', user_profile.get('user_type'))
+    
+    # Check applications
+    applications = await fs.get_applications_by_opportunity('your_opportunity_id')
+    print('Applications count:', len(applications))
+
+asyncio.run(check_access())
+"
+```
+
+**B. Assessment Agent Errors:**
+```bash
+# Verify assessment agent structure
+python -c "
+try:
+    from job_matching_agent.assessment_agent import assessment_agent
+    print('✓ Assessment agent imported successfully')
+    print('Agent name:', assessment_agent.name)
+    print('Agent model:', assessment_agent.model)
+except Exception as e:
+    print('✗ Assessment agent error:', e)
+"
+
+# Check if assessment agent is properly integrated
+python -c "
+try:
+    from job_matching_agent.agent import root_agent
+    print('✓ Root agent imported successfully')
+    print('Available tools:', [tool.name for tool in root_agent.tools if hasattr(tool, 'name')])
+except Exception as e:
+    print('✗ Root agent error:', e)
+"
+```
+
+**C. Data Format Issues:**
+```bash
+# Check survey question formats in Firestore
+python -c "
+import asyncio
+from utils.firestore import FirestoreService
+
+async def check_survey_format():
+    fs = FirestoreService()
+    opportunity = await fs.get_opportunity('your_opportunity_id')
+    
+    survey_questions = opportunity.get('survey_questions', [])
+    print(f'Survey questions count: {len(survey_questions)}')
+    
+    for i, question in enumerate(survey_questions):
+        print(f'Question {i}: {type(question)} - {question}')
+
+asyncio.run(check_survey_format())
+"
+```
+
+**D. Assessment Timeout Issues:**
+```bash
+# Test assessment endpoint with timeout monitoring
+curl -X POST http://localhost:8000/api/opportunities/your_opportunity_id/assess \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "message=Test assessment functionality" \
+  --max-time 35 \
+  -w "Total time: %{time_total}s\n"
+```
+
+#### 3. UI Component and HTMX Issues
 
 **Symptoms:**
 - Dynamic form switching not working on landing page
@@ -478,7 +777,7 @@ curl -H "HX-Request: true" http://localhost:8000/api/form-fields/talent
 curl -H "Accept: text/html" http://localhost:8000/opportunities
 ```
 
-#### 3. Enhanced Firebase and Firestore Issues
+#### 4. Enhanced Firebase and Firestore Issues
 
 **Symptoms:**
 - User registration/login failures
