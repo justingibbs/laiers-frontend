@@ -1,17 +1,14 @@
-<div class="dashboard-header">
+<header class="dashboard-header">
     <div class="spacer"></div>
 
     <div class="logo-container">
-        <img src="/static/img/logo_laiers.png" alt="Laiers.ai Logo" style="max-width: 150px;" />
+        <img src="/static/images/logo_laiers.png" alt="Laiers.ai Logo" style="max-width: 150px;" />
     </div>
 
-    <a 
-        href="#"
-        class="sign-out-link"
-        hx-post="/api/logout"
-        hx-trigger="click"
+    <a href="#" class="sign-out-link" hx-post="/api/logout" hx-trigger="click"
         hx-confirm="Are you sure you want to sign out?"
-    >
+        hx-on::after-request="if (event.detail.successful) window.location.href = JSON.parse(event.detail.xhr.responseText).redirect;">
         Sign Out
     </a>
-</div>
+
+</header>

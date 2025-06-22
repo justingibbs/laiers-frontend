@@ -37,3 +37,5 @@ ENV/
 
 # Mac
 .DS_Store
+
+utils/firestore.py

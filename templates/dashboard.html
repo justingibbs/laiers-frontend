@@ -6,100 +6,100 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Job Matching App</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/styles.css" />
 
 </head>
 
 <body>
     {% include "components/header.html" %}
-
-    <div class="user-info">
-        <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
-        <a href="/company/{{ user_profile.company_id }}"
-                            style="color: #1976d2; text-decoration: none; font-weight: 500;">
-                            🏢 Visit {{ user_profile.company_name }} Portal →
-                        </a>
-        <span class="user-type">{{ user_profile.user_type | title }}</span>
-        <pre>{{ user_profile.profile.name }}</pre>
-        <pre>{{ user.email }}</pre>
-
+    <div class="title-container">
+        <h1>Welcome, {{ user_profile.profile.name or user.email }}</h1>
     </div>
-    <div class="content">
-        <!-- Profile Information Panel -->
-        <div class="profile-card">
+    <div class="container">
 
-            {% if user_profile.user_type == 'talent' %}
-            <div class="profile-section">
-                <h3>Professional Information</h3>
-                {% if user_profile.profile.skills %}
-                <div class="profile-field">
-                    <span class="field-label">Skills:</span>
-                    <span class="field-value">{{ user_profile.profile.skills | join(', ') }}</span>
-                </div>
-                {% endif %}
-                {% if user_profile.profile.experience_level %}
-                <div class="profile-field">
-                    <span class="field-label">Experience Level:</span>
-                    <span class="field-value">{{ user_profile.profile.experience_level }}</span>
-                </div>
-                {% endif %}
+        <div class="user-info">
+            <!-- Display user name when it's ready -->
+            <!-- <pre>{{ user_profile.profile.name }}</pre> -->
+            {% if user_profile.user_type == 'company' %}
+            <div class="button-container">
+                <a class="btn-primary" href="/company/{{ user_profile.company_id }}">
+                    Visit {{ user_profile.company_name }} Portal
+                </a>
             </div>
-
-            <div class="profile-section">
-                <h3>Job Opportunities</h3>
-                <div class="profile-field">
-                    <span class="field-label">Browse Jobs:</span>
-                    <span class="field-value">
-                        <a href="/opportunities" style="color: #1976d2; text-decoration: none; font-weight: 500;">
-                            🚀 View Available Opportunities →
-                        </a>
-                    </span>
-                </div>
-                <div class="profile-field" style="margin-top: 0.75rem;">
-                    <span class="field-value" style="color: #666; font-size: 0.9rem;">
-                        Discover exciting career opportunities from top companies and apply with personalized
-                        applications.
-                    </span>
-                </div>
+            {% elif user_profile.user_type == 'talent' %}
+            <div class="button-container">
+                <a href="/opportunities" class="btn-primary">
+                    View Available Opportunities
+                </a>
             </div>
             {% endif %}
 
-
-
-            
+            <!-- Display user type (ie company or talent) -->
+            <!-- <span class="user-type">{{ user_profile.user_type | title }}</span> -->
         </div>
+        <div class="content">
+            {% if user_profile.user_type == 'talent' %}
+            {% set has_skills = user_profile.profile.skills %}
+            {% set has_experience = user_profile.profile.experience_level %}
+            {% if has_skills or has_experience %}
+            <!-- Profile Information Panel -->
+            <div class="profile-card">
+                <div class="profile-section">
+                    <h3>Professional Information</h3>
 
-        <!-- AI Chat Assistant Panel -->
-        <div class="chat-card">
-            <div class="chat-header">
-                <h2 class="chat-title">🤖 AI Job Assistant</h2>
-            </div>
+                    {% if has_skills %}
+                    <div class="profile-field">
+                        <span class="field-label">Skills:</span>
+                        <span class="field-value">{{ has_skills | join(', ') }}</span>
+                    </div>
+                    {% endif %}
 
-            <div id="chat-messages" class="chat-messages">
-                <div class="welcome-message">
-                    <p><strong>👋 Hi there! I'm your AI job assistant.</strong></p>
-                    <p>
-                        {% if user_profile.user_type == 'talent' %}
-                        I'm here to help you with <strong>job searching</strong>, <strong>resume optimization</strong>,
-                        <strong>interview prep</strong>, and <strong>career advice</strong>.
-                        {% else %}
-                        I'm here to help you with <strong>job postings</strong>, <strong>candidate screening</strong>,
-                        <strong>hiring strategies</strong>, and <strong>recruitment best practices</strong>.
-                        {% endif %}
-                    </p>
-                    <p>How can I assist you today?</p>
+                    {% if has_experience %}
+                    <div class="profile-field">
+                        <span class="field-label">Experience Level:</span>
+                        <span class="field-value">{{ has_experience }}</span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
+            {% endif %}
+            {% endif %}
 
-            <form class="chat-form" hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend"
-                hx-trigger="submit" hx-indicator=".loading-indicator">
-                <input type="text" name="message" class="chat-input"
-                    placeholder="Ask me anything about jobs and careers..." required autocomplete="off">
-                <button type="submit" class="chat-button">
-                    Send
-                    <span class="htmx-indicator loading-indicator"> ...</span>
-                </button>
-            </form>
+            <!-- AI Chat Assistant Panel -->
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h2 class="chat-title">🤖 AI Job Assistant</h2>
+                </div>
+
+                <div id="chat-messages" class="chat-messages">
+                    <div class="welcome-message">
+                        <p><strong>👋 Hi there! I'm your AI job assistant.</strong></p>
+                        <p>
+                            {% if user_profile.user_type == 'talent' %}
+                            I'm here to help you with <strong>job searching</strong>, <strong>resume
+                                optimization</strong>,
+                            <strong>interview prep</strong>, and <strong>career advice</strong>.
+                            {% else %}
+                            I'm here to help you with <strong>job postings</strong>, <strong>candidate
+                                screening</strong>,
+                            <strong>hiring strategies</strong>, and <strong>recruitment best practices</strong>.
+                            {% endif %}
+                        </p>
+                        <p>How can I assist you today?</p>
+                    </div>
+                </div>
+
+                <form class="chat-form" hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend"
+                    hx-trigger="submit" hx-indicator=".loading-indicator">
+                    <input type="text" name="message" class="chat-input"
+                        placeholder="Ask me anything about jobs and careers..." required autocomplete="off">
+                    <button type="submit">
+                        Send
+                        <span class="htmx-indicator loading-indicator"> ...</span>
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 

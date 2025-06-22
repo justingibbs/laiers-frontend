@@ -6,12 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Laiers.ai – Join Now</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/styles.css" />
 </head>
 
 <body>
     <div class="container">
-        <img src="/static/images/logo_laiers.png" alt="Laiers.ai Logo" style="max-width: 250px; margin-bottom: 2rem;" />
+        <div class="landing-page-logo-container">
+            <img src="/static/images/logo_laiers.png" alt="Laiers.ai Logo"
+                style="max-width: 250px; margin-bottom: 2rem;" />
+        </div>
 
         <div class="auth-form">
             <div class="user-type-selector">
@@ -56,7 +60,7 @@
 
                 <button type="submit">
                     Create Account
-                    <span id="loading" class="htmx-indicator" style="margin-left: 0.5rem;">...</span>
+                    <span id="loading" class="htmx-indicator loading-indicator" style="margin-left: 0.5rem;">...</span>
                 </button>
             </form>
 

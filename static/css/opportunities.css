@@ -1,0 +1,78 @@
+
+
+
+
+
+
+
+.view-opportunity-btn {
+    background: #6366f1;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    width: 100%;
+    font-size: 1rem;
+}
+
+.view-opportunity-btn:hover {
+    background: #4f46e5;
+}
+
+.no-opportunities {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #6b7280;
+}
+
+.no-opportunities h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: #374151;
+}
+
+.back-to-dashboard {
+    position: fixed;
+    top: 0.5rem;
+    left: 2rem;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    color: #374151;
+    text-decoration: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.back-to-dashboard:hover {
+    background: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+@media (max-width: 768px) {
+    .opportunities-header {
+        padding: 1.5rem;
+    }
+
+    .opportunities-header h1 {
+        font-size: 2rem;
+    }
+
+    .opportunities-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+
+    .back-to-dashboard {
+        position: static;
+        margin: 1rem auto 2rem auto;
+        display: block;
+        width: fit-content;
+    }
+}

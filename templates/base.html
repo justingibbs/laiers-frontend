@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,24 +9,19 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     {% block extra_head %}{% endblock %}
 </head>
-<body>
-    <header style="text-align: center; margin: 2rem 0;">
-    {% block header %}
-    <img src="{{ url_for('static', path='/img/logo_laiers.png') }}"
-         alt="Laiers.ai Logo"
-         style="max-width: 250px;" />
-    {% endblock %}
-</header>
 
-    
+<body>
+
+    {% include "components/header.html" %}
     <main>
         {% block content %}{% endblock %}
     </main>
-    
+
     <footer>
         {% block footer %}{% endblock %}
     </footer>
-    
+
     {% block extra_scripts %}{% endblock %}
 </body>
-</html> 
+
+</html>

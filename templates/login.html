@@ -1,9 +1,23 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
 
-{% block title %}Laiers.ai – Sign In{% endblock %}
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Laiers.ai – Join Now</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
 
-{% block content %}
+<body>
+
+        
 <div class="container">
+    <div class="landing-page-logo-container">
+            <img src="/static/images/logo_laiers.png" alt="Laiers.ai Logo"
+                style="max-width: 250px; margin-bottom: 2rem;" />
+        </div>
 
     <div class="auth-form">
         <h2>Sign In</h2>
@@ -83,4 +97,6 @@
         }
     });
 </script>
-{% endblock %}
+</body>
+
+</html>

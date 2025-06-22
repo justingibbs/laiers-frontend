@@ -1,248 +1,82 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Browse Opportunities - Job Matching App</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-    <style>
-        .opportunities-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem;
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        
-        .opportunities-header h1 {
-            margin: 0 0 0.5rem 0;
-            font-size: 2.5rem;
-        }
-        
-        .opportunities-header p {
-            margin: 0;
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
-        
-        .opportunities-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-        
-        .opportunities-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-            gap: 2rem;
-            margin-bottom: 3rem;
-        }
-        
-        .opportunity-card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e5e7eb;
-            overflow: hidden;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        
-        .opportunity-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
-        }
-        
-        .opportunity-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .opportunity-title {
-            font-size: 1.4rem;
-            font-weight: 600;
-            color: #1f2937;
-            margin: 0 0 0.5rem 0;
-        }
-        
-        .opportunity-company {
-            color: #6366f1;
-            font-weight: 500;
-            font-size: 1rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .opportunity-meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1rem;
-            color: #6b7280;
-            font-size: 0.9rem;
-        }
-        
-        .opportunity-body {
-            padding: 1.5rem;
-        }
-        
-        .opportunity-description {
-            color: #4b5563;
-            line-height: 1.6;
-            margin-bottom: 1rem;
-        }
-        
-        .opportunity-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
-        }
-        
-        .tag {
-            background: #f3f4f6;
-            color: #374151;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-        
-        .view-opportunity-btn {
-            background: #6366f1;
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            width: 100%;
-            font-size: 1rem;
-        }
-        
-        .view-opportunity-btn:hover {
-            background: #4f46e5;
-        }
-        
-        .no-opportunities {
-            text-align: center;
-            padding: 4rem 2rem;
-            color: #6b7280;
-        }
-        
-        .no-opportunities h2 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            color: #374151;
-        }
-        
-        .back-to-dashboard {
-            position: fixed;
-            top: 2rem;
-            left: 2rem;
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            color: #374151;
-            text-decoration: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 500;
-            transition: all 0.2s;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        
-        .back-to-dashboard:hover {
-            background: white;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-        }
-        
-        @media (max-width: 768px) {
-            .opportunities-header {
-                padding: 1.5rem;
-            }
-            
-            .opportunities-header h1 {
-                font-size: 2rem;
-            }
-            
-            .opportunities-grid {
-                grid-template-columns: 1fr;
-                gap: 1.5rem;
-            }
-            
-            .back-to-dashboard {
-                position: static;
-                margin: 1rem auto 2rem auto;
-                display: block;
-                width: fit-content;
-            }
-        }
-    </style>
+    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/styles.css" />
+    <link rel="stylesheet" href="/static/css/opportunities.css" />
 </head>
+
 <body>
-    <a href="/dashboard" class="back-to-dashboard">← Back to Dashboard</a>
-    
-    <div class="opportunities-header">
-        <h1>🚀 Available Opportunities</h1>
+    {% include "components/header.html" %}
+    <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+
+    <div class="title-container">
+        <h1>Available Opportunities</h1>
         <p>Discover exciting career opportunities from top companies</p>
     </div>
-    
+
     <div class="opportunities-container">
         {% if opportunities %}
-            <div class="opportunities-grid">
-                {% for opportunity in opportunities %}
-                <div class="opportunity-card" onclick="window.location.href='/opportunities/{{ opportunity.id }}'">
-                    <div class="opportunity-header">
-                        <h3 class="opportunity-title">{{ opportunity.title }}</h3>
-                        <div class="opportunity-company">{{ opportunity.company_name }}</div>
-                        <div class="opportunity-meta">
-                            {% if opportunity.location %}
-                                <span>📍 {{ opportunity.location }}</span>
-                            {% endif %}
-                            {% if opportunity.employment_type %}
-                                <span>💼 {{ opportunity.employment_type | title }}</span>
-                            {% endif %}
-                            {% if opportunity.salary_range %}
-                                <span>💰 {{ opportunity.salary_range }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    
-                    <div class="opportunity-body">
-                        <div class="opportunity-description">
-                            {{ opportunity.description[:200] }}{% if opportunity.description|length > 200 %}...{% endif %}
-                        </div>
-                        
-                        {% if opportunity.employment_type or opportunity.location %}
-                        <div class="opportunity-tags">
-                            {% if opportunity.employment_type %}
-                                <span class="tag">{{ opportunity.employment_type | title }}</span>
-                            {% endif %}
-                            {% if opportunity.location %}
-                                <span class="tag">{{ opportunity.location }}</span>
-                            {% endif %}
-                        </div>
+        <div class="opportunities-grid">
+            {% for opportunity in opportunities %}
+            <div class="opportunity-card" onclick="window.location.href='/opportunities/{{ opportunity.id }}'">
+                <div class="opportunity-header">
+                    <h3 class="opportunity-title">{{ opportunity.title }}</h3>
+                    <div class="opportunity-company">{{ opportunity.company_name }}</div>
+                    <div class="opportunity-meta">
+                        {% if opportunity.location %}
+                        <span>📍 {{ opportunity.location }}</span>
                         {% endif %}
-                        
-                        <button class="view-opportunity-btn">
+                        {% if opportunity.employment_type %}
+                        <span>💼 {{ opportunity.employment_type | title }}</span>
+                        {% endif %}
+                        {% if opportunity.salary_range %}
+                        <span>💰 {{ opportunity.salary_range }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="opportunity-body">
+                    <div class="opportunity-description">
+                        {{ opportunity.description[:200] }}{% if opportunity.description|length > 200 %}...{% endif %}
+                    </div>
+
+                    {% if opportunity.employment_type or opportunity.location %}
+                    <div class="opportunity-tags">
+                        {% if opportunity.employment_type %}
+                        <span class="tag">{{ opportunity.employment_type | title }}</span>
+                        {% endif %}
+                        {% if opportunity.location %}
+                        <span class="tag">{{ opportunity.location }}</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    <div class="button-container">
+                        <button>
                             View Details & Apply →
                         </button>
                     </div>
                 </div>
-                {% endfor %}
             </div>
+            {% endfor %}
+        </div>
         {% else %}
-            <div class="no-opportunities">
-                <h2>No Opportunities Available</h2>
-                <p>Check back later for new job opportunities!</p>
-                <p style="margin-top: 2rem;">
-                    <a href="/dashboard" style="color: #6366f1; text-decoration: none; font-weight: 500;">
-                        ← Return to Dashboard
-                    </a>
-                </p>
-            </div>
+        <div class="no-opportunities">
+            <h2>No Opportunities Available</h2>
+            <p>Check back later for new job opportunities!</p>
+            <p style="margin-top: 2rem;">
+                <a href="/dashboard" style="color: #6366f1; text-decoration: none; font-weight: 500;">
+                    ← Return to Dashboard
+                </a>
+            </p>
+        </div>
         {% endif %}
     </div>
 </body>
-</html> 
+
+</html>
