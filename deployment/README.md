@@ -146,11 +146,19 @@ If you prefer manual control:
 gcloud run deploy job-matching-app \
   --source . \
   --region us-central1 \
-  --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=your-project-id,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=true,PORT=8080" \
+  --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=your-project-id,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=true,PORT=8080,FIREBASE_API_KEY=your-firebase-api-key,FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com,FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app,FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id,FIREBASE_APP_ID=your-firebase-app-id" \
   --allow-unauthenticated \
   --memory=1Gi \
   --max-instances=10
 ```
+
+**⚠️ Critical: Firebase Environment Variables**
+
+The Firebase environment variables are **REQUIRED** for user authentication to work. Without them, users cannot register or login. Get these values from:
+
+1. Firebase Console → Project Settings → General → Your Apps
+2. Copy the config object values to environment variables
+3. These values are safe to use as environment variables (they're public client config)
 
 ### Toggle Maintenance Mode
 ```bash
@@ -202,6 +210,13 @@ GOOGLE_CLOUD_LOCATION=us-central1
 GOOGLE_GENAI_USE_VERTEXAI=true
 PORT=8080
 MAINTENANCE_MODE=false
+
+# Firebase Web Config (REQUIRED for authentication)
+FIREBASE_API_KEY=your-firebase-api-key
+FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+FIREBASE_APP_ID=your-firebase-app-id
 ```
 
 ### Optional
@@ -291,9 +306,20 @@ gcloud services enable vertexai.googleapis.com
 ```
 
 **2. Firebase Connection Issues**
-- Verify `GOOGLE_CLOUD_PROJECT` matches Firebase project
+- **Backend (Admin SDK)**: Verify `GOOGLE_CLOUD_PROJECT` matches Firebase project
+- **Frontend (Authentication)**: Ensure Firebase environment variables are set correctly
+- **Missing Config**: Check if Firebase web config is empty `{}` in browser dev tools
+- **Environment Variables**: Verify all 5 Firebase env vars are set in Cloud Run
 - Check service account permissions
 - Ensure Firebase Admin SDK is properly initialized
+
+**Test Firebase Config Loading:**
+```bash
+# Check if Firebase config is loading in production
+curl -s "$(./deployment/quick-deploy.sh url)/login" | grep -A10 "firebase-config"
+
+# Should show populated config, not empty {}
+```
 
 **3. Container Build Failures**
 - Check `Dockerfile` syntax

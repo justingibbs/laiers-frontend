@@ -34,11 +34,6 @@ COPY templates/ ./templates/
 COPY static/ ./static/
 COPY config/ ./config/
 
-# Debug: List files to verify copy worked
-RUN echo "=== Listing /app contents ===" && ls -la /app/
-RUN echo "=== Listing utils contents ===" && ls -la /app/utils/
-RUN echo "=== Testing utils import ===" && python -c "from utils.firestore import FirestoreService; print('Import successful')"
-
 # Create non-root user for security after installing dependencies
 RUN useradd --create-home --shell /bin/bash app && \
     mkdir -p config && \

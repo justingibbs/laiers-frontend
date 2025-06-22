@@ -64,14 +64,15 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    2. Create a new project or select existing project
    3. Enable Authentication with Email/Password provider
    4. Enable Firestore Database in test mode
-   5. **Download Service Account Key:**
+   5. **Download Service Account Key (for local development):**
       - Go to Project Settings → Service Accounts
       - Click "Generate new private key"
       - Save as `config/firebase-credentials.json`
-   6. **Download Web App Config:**
+   6. **Get Web App Config (for frontend authentication):**
       - Go to Project Settings → General → Your Apps
       - Add web app if needed, then copy config
-      - Save as `config/firebase-web-config.json`
+      - **For local development**: Save as `config/firebase-web-config.json`
+      - **For production**: Use environment variables (see below)
 
 5. **Environment Setup:**
    ```bash
@@ -97,6 +98,15 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
    
    # PRODUCTION: Use Application Default Credentials (no file needed)
+   
+   # Firebase Web Config (for frontend authentication)
+   # DEVELOPMENT: Uses config/firebase-web-config.json file
+   # PRODUCTION: Set these environment variables (required for Cloud Run)
+   FIREBASE_API_KEY=your-firebase-api-key
+   FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+   FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
+   FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+   FIREBASE_APP_ID=your-firebase-app-id
    
    # ADK Configuration (optional)
    ADK_BUCKET_NAME=your-bucket-name
@@ -878,13 +888,35 @@ gcloud services enable firestore.googleapis.com
 # 1. Deploy with comprehensive validation
 ./deployment/quick-deploy.sh deploy
 
-# 2. Validate all systems including opportunities
+# 2. Set Firebase environment variables for production (REQUIRED for authentication)
+gcloud run services update job-matching-app \
+  --region us-central1 \
+  --set-env-vars="FIREBASE_API_KEY=your-firebase-api-key,FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com,FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app,FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id,FIREBASE_APP_ID=your-firebase-app-id"
+
+# 3. Validate all systems including opportunities
 curl "$(./deployment/quick-deploy.sh url)/health"
 curl "$(./deployment/quick-deploy.sh url)/test/opportunities/company_1"
 
-# 3. Professional go-live process
+# 4. Professional go-live process
 ./deployment/quick-deploy.sh live
 ```
+
+**⚠️ Important: Firebase Environment Variables**
+
+For production deployment, you MUST set Firebase environment variables for frontend authentication to work. Get these values from your Firebase project:
+
+1. Go to Firebase Console → Project Settings → General → Your Apps
+2. Copy the config values and set them as environment variables:
+   ```bash
+   # Example values (replace with your actual config)
+   FIREBASE_API_KEY=AIzaSyBBz_ndXGc-4hIJl7rbXHAn_69nyw4lfbI
+   FIREBASE_AUTH_DOMAIN=laiersai.firebaseapp.com
+   FIREBASE_STORAGE_BUCKET=laiersai.firebasestorage.app
+   FIREBASE_MESSAGING_SENDER_ID=215827770748
+   FIREBASE_APP_ID=1:215827770748:web:a8cebd0e45556113bcc8f9
+   ```
+
+Without these variables, users won't be able to register or login.
 
 ### 📊 Production Monitoring
 
