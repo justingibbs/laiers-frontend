@@ -42,6 +42,59 @@
 </div>
 
 <div class="content">
+    <!-- Assessment Section (Only for Company Users who own this opportunity) -->
+    {% if user_profile.user_type == 'company' and user_profile.company_id == opportunity.company_id %}
+    <div class="assessment-section">
+        <div class="assessment-header">
+            <h2 class="section-title">🔍 Candidate Assessment Assistant</h2>
+            <div class="assessment-stats">
+                <span class="stat-item">📊 {{ applications_count or 0 }} application{{ 's' if (applications_count or 0) != 1 else '' }}</span>
+                <span class="stat-item">⏰ Last updated: {{ opportunity.updated_at.strftime('%b %d') if opportunity.updated_at else 'Recently' }}</span>
+            </div>
+        </div>
+        
+        <div class="assessment-card">
+            <div id="assessment-chat-messages" class="assessment-chat-messages">
+                <div class="welcome-message">
+                    <p><strong>👋 Hi! I'm your AI candidate assessment assistant.</strong></p>
+                    <p>I can help you <strong>evaluate applicants</strong>, <strong>rank candidates</strong>, and <strong>suggest interview questions</strong> based on their survey responses and job requirements.</p>
+                    {% if applications_count and applications_count > 0 %}
+                    <p><strong>{{ applications_count }} candidate{{ 's' if applications_count != 1 else '' }}</strong> ha{{ 've' if applications_count != 1 else 's' }} applied to this position. How would you like to assess them?</p>
+                    {% else %}
+                    <p>No applications yet for this position. I can still help you prepare interview questions, understand the role requirements, or discuss assessment strategies.</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <form 
+                class="assessment-chat-form"
+                hx-post="/api/opportunities/{{ opportunity.id }}/assess" 
+                hx-target="#assessment-chat-messages" 
+                hx-swap="beforeend"
+                hx-trigger="submit"
+                hx-indicator=".assessment-loading"
+            >
+                <input 
+                    type="text" 
+                    name="message" 
+                    class="assessment-chat-input"
+                    {% if applications_count and applications_count > 0 %}
+                    placeholder="Ask me to evaluate candidates, rank applicants, or suggest interview questions..." 
+                    {% else %}
+                    placeholder="Ask me about assessment strategies, interview questions, or role requirements..." 
+                    {% endif %}
+                    required 
+                    autocomplete="off"
+                >
+                <button type="submit">
+                    Send
+                    <span class="htmx-indicator assessment-loading"> ...</span>
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Job Details -->
     <div class="opportunity-card">
         <h2 class="section-title">Job Description</h2>
@@ -121,17 +174,23 @@
     </div>
     {% endif %}
     {% else %}
-    <!-- Not a Talent User -->
+    <!-- Company Portal View -->
     <div class="application-section">
         <div class="not-talent-message">
             <p><strong>👔 Company Portal View</strong></p>
-            <p>You're viewing this as a company user. Only talent users can apply to opportunities.</p>
-
+            {% if user_profile.company_id == opportunity.company_id %}
+            <p>You're viewing your company's opportunity. Use the assessment assistant above to evaluate candidates.</p>
             <div class="opportunity-actions">
-                <a href="/company/{{ opportunity.company_id }}" class="action-button primary-button">View Company
-                    Page</a>
+                <a href="/company/{{ opportunity.company_id }}" class="action-button primary-button">View Company Page</a>
                 <a href="/dashboard" class="action-button secondary-button">Return to Dashboard</a>
             </div>
+            {% else %}
+            <p>You're viewing this as a company user. Only talent users can apply to opportunities.</p>
+            <div class="opportunity-actions">
+                <a href="/company/{{ user_profile.company_id }}" class="action-button primary-button">View Your Company Page</a>
+                <a href="/dashboard" class="action-button secondary-button">Return to Dashboard</a>
+            </div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -151,6 +210,17 @@
                 if (form) {
                     form.style.display = 'none';
                 }
+            }
+        }
+        
+        // Handle assessment chat
+        if (event.detail.target.id === 'assessment-chat-messages') {
+            const form = event.detail.elt;
+            if (form && form.classList.contains('assessment-chat-form')) {
+                form.reset();
+                // Auto-scroll assessment chat to bottom
+                const chatContainer = document.getElementById('assessment-chat-messages');
+                chatContainer.scrollTop = chatContainer.scrollHeight;
             }
         }
     });

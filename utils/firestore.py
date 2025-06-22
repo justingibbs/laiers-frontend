@@ -221,13 +221,14 @@ class FirestoreService:
         try:
             applications = []
             query = self.db.collection('applications')\
-                .where('opportunity_id', '==', opportunity_id)\
-                .order_by('applied_at', direction=admin_firestore.Query.DESCENDING)
+                .where('opportunity_id', '==', opportunity_id)
 
             for doc in query.stream():
                 application_data = doc.to_dict()
                 application_data['id'] = doc.id
                 applications.append(application_data)
+
+            applications.sort(key=lambda x: x.get('applied_at', datetime.min), reverse=True)
 
             logger.info(f"Retrieved {len(applications)} applications for opportunity: {opportunity_id}")
             return applications
