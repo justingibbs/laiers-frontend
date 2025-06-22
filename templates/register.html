@@ -123,5 +123,35 @@ function validateForm() {
     
     return true;
 }
+
+// Handle HTMX response errors (fallback for any status codes that weren't handled properly)
+document.body.addEventListener('htmx:responseError', function(event) {
+    if (event.detail.elt.matches('form[hx-post="/api/register"]')) {
+        const resultDiv = document.getElementById('auth-result');
+        let errorMessage = 'Registration failed. Please try again.';
+        
+        // Try to extract a meaningful error message
+        if (event.detail.xhr.responseText) {
+            try {
+                const response = JSON.parse(event.detail.xhr.responseText);
+                if (response.detail) {
+                    errorMessage = response.detail;
+                }
+            } catch (e) {
+                // If not JSON, check if it's plain text
+                if (event.detail.xhr.responseText.includes('EMAIL_EXISTS')) {
+                    errorMessage = 'An account with this email already exists. Please use a different email or try signing in.';
+                }
+            }
+        }
+        
+        resultDiv.innerHTML = `
+            <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>❌ Registration Failed</strong></p>
+                <p>${errorMessage}</p>
+            </div>
+        `;
+    }
+});
 </script>
 {% endblock %} 

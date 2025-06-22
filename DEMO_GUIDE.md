@@ -40,3 +40,27 @@ We are seeking a talented Senior Software Engineer to join our growing engineeri
 
 Join us in building the future of workflow automation!
 ```
+
+# Operations Lead
+
+```
+# Operations Lead
+
+We're looking for an **Operations Lead** to keep our teams running smoothly as we scale. You’ll handle the day-to-day logistics, support cross-functional projects, and make sure nothing falls through the cracks.
+
+## You’ll:
+- Coordinate internal workflows and schedules  
+- Own vendor and tool management  
+- Support hiring and onboarding  
+- Improve team processes and communication  
+
+## You bring:
+- 3+ years in ops, admin, or project coordination  
+- Strong organizational and people skills  
+- Comfort wearing many hats in a fast-moving environment  
+
+## Perks:
+- $85K–$100K salary + benefits  
+- Hybrid (SF-based, 2–3 days in office)  
+- Health coverage, PTO, and learning stipend  
+```

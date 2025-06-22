@@ -240,16 +240,31 @@ async def register(request: Request):
             
             if user_type not in ['company', 'talent']:
                 logger.error(f"Invalid user type: {user_type}")
-                raise HTTPException(status_code=400, detail="Invalid user type")
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>Invalid user type</p>
+                </div>
+                """, status_code=200)
             
             if password != confirm_password:
                 logger.error("Password mismatch")
-                raise HTTPException(status_code=400, detail="Passwords do not match")
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>Passwords do not match</p>
+                </div>
+                """, status_code=200)
             
             # For company users, validate company selection
             if user_type == 'company' and not company_id:
                 logger.error(f"Missing company_id for company user. Received: {company_id}")
-                raise HTTPException(status_code=400, detail="Company selection is required")
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>Company selection is required</p>
+                </div>
+                """, status_code=200)
             
             try:
                 # Create the user in Firebase Auth
@@ -262,7 +277,17 @@ async def register(request: Request):
                 logger.info(f"Created Firebase user - UID: {user_id}")
             except Exception as e:
                 logger.error(f"Firebase user creation error: {e}")
-                raise HTTPException(status_code=400, detail=str(e))
+                # Return HTML error response for form requests (status 200 so HTMX processes it)
+                error_message = str(e)
+                if "EMAIL_EXISTS" in error_message:
+                    error_message = "An account with this email already exists. Please use a different email or try signing in."
+                
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>{error_message}</p>
+                </div>
+                """, status_code=200)
         
         # Create user profile in Firestore
         profile_created = await firestore_service.create_user_profile(user_id, email, user_type, company_id)
@@ -272,7 +297,13 @@ async def register(request: Request):
                 auth.delete_user(user_id)
             except Exception as e:
                 logger.error(f"Failed to clean up Firebase user after Firestore error: {e}")
-            raise HTTPException(status_code=500, detail="Failed to create user profile")
+            # Return HTML error response for form requests (status 200 so HTMX processes it)
+            return HTMLResponse(content=f"""
+            <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>❌ Registration Failed</strong></p>
+                <p>Failed to create user profile. Please try again.</p>
+            </div>
+            """, status_code=200)
         
         logger.info(f"Registration successful for user: {email}")
         
