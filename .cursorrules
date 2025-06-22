@@ -22,6 +22,7 @@ Building a job matching MVP where Talent and Companies chat with AI agents. Fast
 - Environment-based configuration only
 - Jinja2 templates for HTML rendering
 - HTMX for dynamic interactions (no complex JavaScript)
+- Component-based template architecture with shared components
 
 ## Project Structure
 ```
@@ -38,23 +39,33 @@ laiers/
 ├── README.md             # Project documentation
 ├── templates/            # Jinja2 template files
 │   ├── base.html         # Base template with common elements
-│   ├── landing.html      # Landing page
+│   ├── landing.html      # Landing page with branding
 │   ├── login.html        # Login page
 │   ├── register.html     # Registration page
-│   ├── dashboard.html    # Main dashboard with profile + chat
+│   ├── dashboard.html    # Multi-section dashboard with profile + chat
 │   ├── company.html      # Company portal with opportunities list
-│   ├── opportunities_list.html  # Browse all opportunities (talent users)
+│   ├── opportunities_list.html  # Card-based opportunity browsing
 │   ├── create_opportunity.html  # AI-guided opportunity creation
 │   ├── opportunity_detail.html  # Job details + application form
 │   └── components/       # Reusable template components
-│       ├── chat_message.html      # Chat message component
-│       ├── chat_error.html        # Chat error component
-│       ├── opportunity_card.html  # Opportunity display card
-│       └── survey_form.html       # Application survey form
+│       ├── header.html           # Shared header component
+│       ├── chat_message.html     # Chat message component
+│       ├── chat_error.html       # Chat error component
+│       ├── opportunity_card.html # Opportunity display card
+│       ├── survey_form.html      # Application survey form
+│       ├── chat.html            # Chat interface component
+│       ├── forms.html           # Form components
+│       └── messages.html        # Message display components
 ├── static/               # Static assets
 │   ├── css/
-│   │   └── styles.css    # Main stylesheet
+│   │   ├── styles.css    # Main stylesheet
+│   │   ├── opportunities.css     # Opportunity browsing styles
+│   │   ├── company.css          # Company portal styles
+│   │   ├── create-opportunity.css # Opportunity creation styles
+│   │   └── opportunity-detail.css # Job detail page styles
 │   └── images/           # Static images
+│       ├── logo_laiers.png      # Main Laiers.ai logo
+│       └── favicon.ico          # Site favicon
 ├── config/
 │   ├── firebase-credentials.json     # Firebase service account key
 │   └── firebase-web-config.json      # Firebase web app config
@@ -63,7 +74,7 @@ laiers/
 │   ├── firestore.py      # Firestore helpers + opportunity management
 │   ├── auth.py           # Firebase authentication helpers
 │   ├── middleware.py     # Maintenance mode middleware
-│   └── models.py         # Pydantic models
+│   └── model.py          # Pydantic models (renamed from models.py)
 ├── deployment/           # Cloud Run deployment system
 │   ├── deploy.sh         # Full-featured deployment script
 │   ├── quick-deploy.sh   # Quick deployment commands
@@ -176,7 +187,7 @@ root_agent = Agent(
 )
 ```
 
-### Dashboard Template Pattern (Two-Panel Layout)
+### Dashboard Template Pattern (Multi-Section Layout) - UPDATED
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -185,191 +196,226 @@ root_agent = Agent(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Job Matching App</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <style>
-        /* Two-column layout */
-        .content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            max-width: 1200px;
-            margin: 2rem auto;
-        }
-        
-        @media (max-width: 768px) {
-            .content { grid-template-columns: 1fr; }
-        }
-    </style>
+    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/styles.css" />
 </head>
 <body>
-    <div class="dashboard-header">
-        <div class="user-info">
-            <h2>Welcome, {{ user_profile.profile.name or user.email }}</h2>
-            <span class="user-type">{{ user_profile.user_type | title }}</span>
-        </div>
-        <button 
-            class="sign-out"
-            hx-post="/api/logout"
-            hx-confirm="Are you sure you want to sign out?"
-        >Sign Out</button>
+    {% include "components/header.html" %}
+    
+    <!-- Title Section with Personalized Welcome -->
+    <div class="title-container">
+        <h1>Welcome, {{ user_profile.profile.name or user.email }}</h1>
     </div>
-
-    <div class="content">
-        <!-- Profile Panel -->
-        <div class="profile-card">
-            <h2>Profile Information</h2>
-            <!-- Profile data display -->
+    
+    <div class="container">
+        <!-- User Type Specific Navigation -->
+        <div class="user-info">
+            {% if user_profile.user_type == 'company' %}
+            <div class="button-container">
+                <a class="btn-primary" href="/company/{{ user_profile.company_id }}">
+                    Visit {{ user_profile.company_name }} Portal
+                </a>
+            </div>
+            {% elif user_profile.user_type == 'talent' %}
+            <div class="button-container">
+                <a href="/opportunities" class="btn-primary">
+                    View Available Opportunities
+                </a>
+            </div>
+            {% endif %}
         </div>
-
-        <!-- Chat Panel -->
-        <div class="chat-card">
-            <h2>🤖 AI Job Assistant</h2>
-            
-            <div id="chat-messages" class="chat-messages">
-                <div class="welcome-message">
-                    {% if user_profile.user_type == 'talent' %}
-                        I'm here to help with job searching, resumes, and career advice.
-                    {% else %}
-                        I'm here to help with job postings and hiring strategies.
+        
+        <div class="content">
+            <!-- Conditional Profile Information Panel -->
+            {% if user_profile.user_type == 'talent' %}
+            {% set has_skills = user_profile.profile.skills %}
+            {% set has_experience = user_profile.profile.experience_level %}
+            {% if has_skills or has_experience %}
+            <div class="profile-card">
+                <div class="profile-section">
+                    <h3>Professional Information</h3>
+                    
+                    {% if has_skills %}
+                    <div class="profile-field">
+                        <span class="field-label">Skills:</span>
+                        <span class="field-value">{{ has_skills | join(', ') }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    {% if has_experience %}
+                    <div class="profile-field">
+                        <span class="field-label">Experience Level:</span>
+                        <span class="field-value">{{ has_experience }}</span>
+                    </div>
                     {% endif %}
                 </div>
             </div>
-            
-            <form 
-                class="chat-form"
-                hx-post="/api/chat" 
-                hx-target="#chat-messages" 
-                hx-swap="beforeend"
-                hx-trigger="submit"
-            >
-                <input 
-                    type="text" 
-                    name="message" 
-                    placeholder="Ask me anything about jobs and careers..." 
-                    required 
-                    autocomplete="off"
-                >
-                <button type="submit">Send</button>
-            </form>
+            {% endif %}
+            {% endif %}
+
+            <!-- AI Chat Assistant Panel -->
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h2 class="chat-title">🤖 AI Job Assistant</h2>
+                </div>
+                
+                <div id="chat-messages" class="chat-messages">
+                    <div class="welcome-message">
+                        <p><strong>👋 Hi there! I'm your AI job assistant.</strong></p>
+                        <p>
+                            {% if user_profile.user_type == 'talent' %}
+                            I'm here to help you with <strong>job searching</strong>, <strong>resume optimization</strong>,
+                            <strong>interview prep</strong>, and <strong>career advice</strong>.
+                            {% else %}
+                            I'm here to help you with <strong>job postings</strong>, <strong>candidate screening</strong>,
+                            <strong>hiring strategies</strong>, and <strong>recruitment best practices</strong>.
+                            {% endif %}
+                        </p>
+                        <p>How can I assist you today?</p>
+                    </div>
+                </div>
+                
+                <form class="chat-form" hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend"
+                      hx-trigger="submit" hx-indicator=".loading-indicator">
+                    <input type="text" name="message" class="chat-input"
+                           placeholder="Ask me anything about jobs and careers..." required autocomplete="off">
+                    <button type="submit">
+                        Send
+                        <span class="htmx-indicator loading-indicator"> ...</span>
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 </body>
 </html>
 ```
 
-### Chat Message Component Pattern
+### Branding Guidelines - NEW
 ```html
-<!-- templates/components/chat_message.html -->
-<div class="message-pair">
-    <!-- User message -->
-    <div class="user-message">
-        <div class="message-content">{{ user_message }}</div>
-        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+<!-- Logo Usage Pattern -->
+<div class="landing-page-logo-container">
+    <img src="/static/images/logo_laiers.png" alt="Laiers.ai Logo"
+         style="max-width: 250px; margin-bottom: 2rem;" />
+</div>
+
+<!-- Favicon Implementation -->
+<link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
+
+<!-- Brand Colors and Styling -->
+/* Primary brand color: #6366f1 (indigo) */
+/* Use consistently across buttons, links, and accents */
+```
+
+### Card-Based Design Pattern - NEW
+```html
+<!-- Opportunity Card Pattern -->
+<div class="opportunity-card" onclick="window.location.href='/opportunities/{{ opportunity.id }}'">
+    <div class="opportunity-header">
+        <h3 class="opportunity-title">{{ opportunity.title }}</h3>
+        <div class="opportunity-company">{{ opportunity.company_name }}</div>
+        <div class="opportunity-meta">
+            {% if opportunity.location %}
+            <span>📍 {{ opportunity.location }}</span>
+            {% endif %}
+            {% if opportunity.employment_type %}
+            <span>💼 {{ opportunity.employment_type | title }}</span>
+            {% endif %}
+            {% if opportunity.salary_range %}
+            <span>💰 {{ opportunity.salary_range }}</span>
+            {% endif %}
+        </div>
     </div>
     
-    <!-- Agent response -->
-    <div class="agent-message">
-        <div class="message-avatar">🤖</div>
-        <div class="message-content">{{ agent_response }}</div>
-        <div class="message-timestamp">{{ timestamp.strftime('%H:%M') }}</div>
+    <div class="opportunity-body">
+        <div class="opportunity-description">
+            {{ opportunity.description[:200] }}{% if opportunity.description|length > 200 %}...{% endif %}
+        </div>
+        
+        {% if opportunity.employment_type or opportunity.location %}
+        <div class="opportunity-tags">
+            {% if opportunity.employment_type %}
+            <span class="tag">{{ opportunity.employment_type | title }}</span>
+            {% endif %}
+            {% if opportunity.location %}
+            <span class="tag">{{ opportunity.location }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <div class="button-container">
+            <button>View Details & Apply →</button>
+        </div>
     </div>
 </div>
 ```
 
-### Firebase Auth Pattern
-```python
-# utils/auth.py (simplified from original .cursorrules)
-from fastapi import Depends, HTTPException, Cookie
-from firebase_admin import auth
+### Enhanced HTMX Patterns - UPDATED
+```html
+<!-- Dynamic User Type Form Switching -->
+<div class="user-type-selector">
+    <button class="user-type-btn selected" 
+            hx-get="/api/form-fields/talent" 
+            hx-target="#form-fields"
+            hx-swap="innerHTML"
+            onclick="document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected')); this.classList.add('selected');">
+        I'm Looking for Work
+    </button>
+    <button class="user-type-btn" 
+            hx-get="/api/form-fields/company" 
+            hx-target="#form-fields"
+            hx-swap="innerHTML"
+            onclick="document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('selected')); this.classList.add('selected');">
+        I'm Hiring
+    </button>
+</div>
 
-async def get_current_user(session_token: str = Cookie(None)):
-    if not session_token:
-        return None
-    try:
-        decoded_token = auth.verify_session_cookie(session_token, check_revoked=True)
-        return decoded_token
-    except Exception:
-        return None
+<!-- Loading Indicators -->
+<button type="submit">
+    Send
+    <span class="htmx-indicator loading-indicator"> ...</span>
+</button>
 
-async def require_auth(session_token: str = Cookie(None)):
-    user = await get_current_user(session_token)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    return user
-
-async def optional_auth(session_token: str = Cookie(None)):
-    return await get_current_user(session_token)
+<!-- Auto-scroll Chat Implementation -->
+<script>
+document.body.addEventListener('htmx:afterRequest', function (event) {
+    if (event.detail.xhr.status === 200 && event.detail.elt.matches('.chat-form')) {
+        event.detail.elt.reset();
+        
+        // Scroll to bottom of chat
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+});
+</script>
 ```
 
-### Firestore Helper Pattern
-```python
-# utils/firestore.py
-from google.cloud import firestore
-import os
+### Component Architecture Pattern - NEW
+```html
+<!-- Shared Header Component Usage -->
+{% include "components/header.html" %}
 
-class FirestoreService:
-    def __init__(self):
-        self.db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
-    
-    async def create_user_profile(self, uid: str, email: str, user_type: str) -> bool:
-        try:
-            doc_ref = self.db.collection("users").document(uid)
-            doc_ref.set({
-                "email": email,
-                "user_type": user_type,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "profile": {}
-            })
-            return True
-        except Exception as e:
-            logger.error(f"Error creating user profile: {e}")
-            return False
-    
-    async def get_user_profile(self, uid: str) -> dict | None:
-        try:
-            doc = self.db.collection("users").document(uid).get()
-            return doc.to_dict() if doc.exists else None
-        except Exception as e:
-            logger.error(f"Error getting user profile: {e}")
-            return None
+<!-- Back Navigation Pattern -->
+<a href="/dashboard" class="back-link">← Back to Dashboard</a>
 
-    # NEW: Opportunity Management Methods
-    async def create_opportunity(self, opportunity_data: dict) -> str | None:
-        try:
-            doc_ref = self.db.collection("opportunities").add({
-                **opportunity_data,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "status": "active"
-            })
-            return doc_ref[1].id
-        except Exception as e:
-            logger.error(f"Error creating opportunity: {e}")
-            return None
-    
-    async def get_all_opportunities(self) -> list:
-        try:
-            query = self.db.collection('opportunities').where('status', '==', 'active')
-            docs = query.stream()
-            opportunities = []
-            for doc in docs:
-                opportunity_data = doc.to_dict()
-                opportunity_data['id'] = doc.id
-                opportunities.append(opportunity_data)
-            opportunities.sort(key=lambda x: x.get('created_at'), reverse=True)
-            return opportunities
-        except Exception as e:
-            logger.error(f"Error getting all opportunities: {e}")
-            return []
-    
-    async def submit_application(self, application_data: dict) -> bool:
-        try:
-            self.db.collection("applications").add({
-                **application_data,
-                "applied_at": firestore.SERVER_TIMESTAMP
-            })
-            return True
-        except Exception as e:
-            logger.error(f"Error submitting application: {e}")
-            return False
+<!-- Empty State Handling -->
+{% if opportunities %}
+<div class="opportunities-grid">
+    {% for opportunity in opportunities %}
+    <!-- Opportunity cards -->
+    {% endfor %}
+</div>
+{% else %}
+<div class="no-opportunities">
+    <h2>No Opportunities Available</h2>
+    <p>Check back later for new job opportunities!</p>
+    <p style="margin-top: 2rem;">
+        <a href="/dashboard" style="color: #6366f1; text-decoration: none; font-weight: 500;">
+            ← Return to Dashboard
+        </a>
+    </p>
+</div>
+{% endif %}
 ```
 
 ## Environment Configuration - CRITICAL SETUP
@@ -620,18 +666,44 @@ The application includes a full Cloud Run deployment system with maintenance mod
 - **Health Monitoring**: Multiple health check endpoints
 - **Security**: Non-root container user, minimal attack surface
 
-## Development Focus
-- **MVP Prototype**: Focus on core user flow (signup → dashboard → chat)
-- **User Types**: "company" and "talent" only, single agent handles both
-- **Context-Aware Agent**: Agent adapts responses based on user_type
-- **Clean Integration**: Custom UI + ADK backend, not ADK's default UI
-- **Template-First**: Design templates before implementing routes
-- **Responsive Design**: Mobile-friendly two-panel layout
-- **Opportunity Management**: Complete job posting and application workflow
+## Development Focus - UPDATED
+- **Professional Product**: Focus on polished user experience with consistent branding
+- **User Types**: "company" and "talent" with sophisticated user flows
+- **Context-Aware Agent**: Agent adapts responses based on user_type and context
+- **Component-Based UI**: Reusable templates and consistent design patterns
+- **Card-Based Browsing**: Modern interface for opportunity discovery
+- **Responsive Design**: Mobile-friendly multi-section layouts
+- **Opportunity Management**: Complete job posting and application workflow with rich metadata
 - **AI-Guided Creation**: Use ADK agent for structured opportunity creation
-- **HTMX Interactions**: Dynamic forms and partial page updates
+- **HTMX Interactions**: Dynamic forms with loading states and auto-scroll
 - **Firestore Integration**: All data stored in Firestore collections
 - **Production Ready**: Complete Cloud Run deployment with maintenance mode
+
+## UI/UX Design Patterns - NEW
+
+### Layout Patterns:
+- **Multi-section Dashboard**: Title container + user info + content grid
+- **Card-based Browsing**: Grid layouts with rich metadata display
+- **Progressive Enhancement**: HTMX for dynamic behavior, functional without JS
+- **Mobile-first Responsive**: Graceful degradation on smaller screens
+
+### Branding Consistency:
+- **Logo Placement**: Consistent sizing and positioning across pages
+- **Color Scheme**: Primary indigo (#6366f1) for interactive elements
+- **Typography**: Clear hierarchy with semantic HTML
+- **Icon Usage**: Emoji icons for visual context (📍, 💼, 💰, 🤖)
+
+### Interaction Patterns:
+- **Loading States**: Visual feedback during HTMX requests
+- **Form Validation**: Inline error messages with HTMX
+- **Auto-scroll**: Smooth chat message scrolling
+- **Click Targets**: Large clickable areas for cards and buttons
+
+### Component System:
+- **Shared Header**: Consistent navigation across pages
+- **Reusable Cards**: Standardized content presentation
+- **Form Components**: Consistent form styling and behavior
+- **Message Components**: Standardized chat and error displays
 
 ## Common Mistakes to Avoid - UPDATED
 - **Wrong ADK mounting**: Don't use ADK app as main app, mount under `/adk`
@@ -644,6 +716,10 @@ The application includes a full Cloud Run deployment system with maintenance mod
 - **API not enabled**: Always check Vertex AI API is enabled in Google Cloud Console
 - **Authentication**: Must run `gcloud auth application-default login`
 - **Direct imports**: Don't import ADK classes directly, use HTTP API
+- **Branding inconsistency**: Always use established logo sizing and color schemes
+- **Component duplication**: Use shared components instead of duplicating header/footer code
+- **Missing loading states**: Always provide visual feedback for HTMX requests
+- **Broken responsive design**: Test grid layouts collapse properly on mobile
 
 ## Troubleshooting - CRITICAL ISSUES
 
