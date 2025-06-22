@@ -1,0 +1,244 @@
+body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f5f5f5;
+    }
+    
+    .opportunity-header {
+        background-color: #fff;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .opportunity-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    
+    .content {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+    
+    .company-card, .creation-card {
+        background-color: white;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        height: fit-content;
+    }
+    
+    .creation-card {
+        height: 600px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .company-title, .creation-title {
+        color: #333;
+        margin-bottom: 1rem;
+    }
+    
+    .company-description {
+        color: #666;
+        margin-bottom: 1.5rem;
+        line-height: 1.5;
+    }
+    
+    .progress-section {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .progress-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.75rem;
+    }
+    
+    .progress-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .progress-step {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        color: #666;
+    }
+    
+    .step-icon {
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+    
+    .step-pending {
+        background-color: #e0e0e0;
+        color: #999;
+    }
+    
+    .step-active {
+        background-color: #1976d2;
+        color: white;
+    }
+    
+    .step-complete {
+        background-color: #4caf50;
+        color: white;
+    }
+    
+    /* Chat Styles */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background-color: #fafafa;
+    }
+    
+    .chat-form {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .chat-input {
+        flex: 1;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 0.25rem;
+        font-size: 1rem;
+    }
+    
+    .chat-button {
+        padding: 0.75rem 1.5rem;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+    }
+    
+    .chat-button:hover {
+        background-color: #45a049;
+    }
+    
+    .message-pair {
+        margin-bottom: 1.5rem;
+    }
+    
+    .user-message, .agent-message {
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: 1rem;
+        max-width: 80%;
+        word-wrap: break-word;
+    }
+    
+    .user-message {
+        background-color: #4caf50;
+        color: white;
+        margin-left: auto;
+        text-align: right;
+    }
+    
+    .agent-message {
+        background-color: #e8f5e8;
+        color: #333;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        margin-right: auto;
+    }
+    
+    .message-avatar {
+        font-size: 1.5rem;
+        margin-top: 0.25rem;
+    }
+    
+    .message-content {
+        flex: 1;
+    }
+    
+    .message-timestamp {
+        font-size: 0.75rem;
+        opacity: 0.7;
+        margin-top: 0.25rem;
+    }
+    
+    .welcome-message {
+        text-align: center;
+        color: #666;
+        font-style: italic;
+        padding: 2rem 1rem;
+        background-color: #f0f8f0;
+        border-radius: 0.5rem;
+        border: 1px solid #4caf50;
+    }
+    
+    .error-message {
+        background-color: #ffebee;
+        color: #c62828;
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        border: 1px solid #ef5350;
+    }
+    
+    .creation-tips {
+        background-color: #e3f2fd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1976d2;
+        margin-top: 1rem;
+    }
+    
+    .creation-tips h4 {
+        margin: 0 0 0.5rem 0;
+        color: #1976d2;
+    }
+    
+    .creation-tips ul {
+        margin: 0;
+        padding-left: 1.25rem;
+        color: #555;
+    }
+    
+    .creation-tips li {
+        margin-bottom: 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    @media (max-width: 768px) {
+        .content {
+            grid-template-columns: 1fr;
+        }
+        
+        .creation-card {
+            height: 500px;
+        }
+    }
