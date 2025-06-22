@@ -2,6 +2,8 @@
 from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
 from .job_posting_agent import job_posting_agent
+from .assessment_agent import assessment_agent
+from typing import Optional
 
 MODEL = "gemini-2.0-flash-lite"
 
@@ -12,10 +14,11 @@ def get_user_context(message: str) -> dict:
         "task": None,
         "company_name": None,
         "company_id": None,
+        "opportunity_id": None,
         "clean_message": message
     }
     
-    # Parse context from message format like: [User type: company, Task: create_opportunity, Company: Name, Company ID: id] actual message
+    # Parse context from message format like: [User type: company, Task: assess_candidates, Opportunity ID: id] actual message
     if message.startswith('[') and ']' in message:
         try:
             context_part = message[1:message.index(']')]
@@ -34,13 +37,15 @@ def get_user_context(message: str) -> dict:
                         context["company_name"] = value
                     elif key.lower() == "company id":
                         context["company_id"] = value
+                    elif key.lower() == "opportunity id":
+                        context["opportunity_id"] = value
         except Exception:
             # If parsing fails, just return the original message
             pass
     
     return context
 
-def analyze_user_needs(user_type: str, task: str = None) -> str:
+def analyze_user_needs(user_type: str, task: Optional[str] = None) -> str:
     """Analyze what the user likely needs based on their type and task"""
     if user_type == "talent":
         return """
@@ -62,6 +67,15 @@ def analyze_user_needs(user_type: str, task: str = None) -> str:
             - Will generate behavioral interview questions
             - Will create structured opportunity ready for publishing
             """
+        elif task == "assess_candidates":
+            return """
+            Company user assessing candidates needs:
+            - Use the assessment_agent tool for candidate evaluation
+            - The tool will analyze survey responses against job requirements
+            - Will rank candidates based on qualifications and fit
+            - Will suggest tailored interview questions for each candidate
+            - Will provide objective evaluation criteria and insights
+            """
         else:
             return """
             Company users typically need:
@@ -75,8 +89,8 @@ def analyze_user_needs(user_type: str, task: str = None) -> str:
     else:
         return "Unknown user type - please provide more context about how I can help you."
 
-job_matching_coordinator = LlmAgent(
-    name="job_matching_coordinator",
+job_matching_agent = LlmAgent(
+    name="job_matching_agent",
     model=MODEL,
     description="Main job matching assistant that handles talent and company needs, with specialized sub-agents for complex tasks.",
     instruction="""You are a job matching assistant for a professional platform.
@@ -100,6 +114,9 @@ For 'company' users:
 For 'company' users with Task: 'create_opportunity':
 IMMEDIATELY use the job_posting_agent tool. Do not create job opportunities yourself - always delegate this task to the job_posting_agent tool which specializes in the complete workflow including soft skills identification and behavioral interview question creation.
 
+For 'company' users with Task: 'assess_candidates':
+IMMEDIATELY use the assessment_agent tool. Do not attempt to evaluate candidates yourself - always delegate this task to the assessment_agent tool which specializes in analyzing survey responses, ranking candidates, and providing evaluation insights.
+
 Use the get_user_context tool to understand who you're talking to and the analyze_user_needs tool to provide appropriate guidance.
 
 Always maintain a professional, helpful, and encouraging tone. Ask follow-up questions to better understand their specific needs and provide personalized advice.""",
@@ -107,8 +124,9 @@ Always maintain a professional, helpful, and encouraging tone. Ask follow-up que
         get_user_context,
         analyze_user_needs,
         AgentTool(agent=job_posting_agent),
+        AgentTool(agent=assessment_agent),
     ],
 )
 
 # This MUST be named 'root_agent' for ADK to discover it
-root_agent = job_matching_coordinator
+root_agent = job_matching_agent

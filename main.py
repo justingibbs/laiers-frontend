@@ -240,16 +240,22 @@ async def register(request: Request):
             
             if user_type not in ['company', 'talent']:
                 logger.error(f"Invalid user type: {user_type}")
-                raise HTTPException(status_code=400, detail="Invalid user type")
-            
-            if password != confirm_password:
-                logger.error("Password mismatch")
-                raise HTTPException(status_code=400, detail="Passwords do not match")
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>Invalid user type</p>
+                </div>
+                """, status_code=200)
             
             # For company users, validate company selection
             if user_type == 'company' and not company_id:
                 logger.error(f"Missing company_id for company user. Received: {company_id}")
-                raise HTTPException(status_code=400, detail="Company selection is required")
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>Company selection is required</p>
+                </div>
+                """, status_code=200)
             
             try:
                 # Create the user in Firebase Auth
@@ -262,7 +268,17 @@ async def register(request: Request):
                 logger.info(f"Created Firebase user - UID: {user_id}")
             except Exception as e:
                 logger.error(f"Firebase user creation error: {e}")
-                raise HTTPException(status_code=400, detail=str(e))
+                # Return HTML error response for form requests (status 200 so HTMX processes it)
+                error_message = str(e)
+                if "EMAIL_EXISTS" in error_message:
+                    error_message = "An account with this email already exists. Please use a different email or try signing in."
+                
+                return HTMLResponse(content=f"""
+                <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                    <p><strong>❌ Registration Failed</strong></p>
+                    <p>{error_message}</p>
+                </div>
+                """, status_code=200)
         
         # Create user profile in Firestore
         profile_created = await firestore_service.create_user_profile(user_id, email, user_type, company_id)
@@ -272,7 +288,13 @@ async def register(request: Request):
                 auth.delete_user(user_id)
             except Exception as e:
                 logger.error(f"Failed to clean up Firebase user after Firestore error: {e}")
-            raise HTTPException(status_code=500, detail="Failed to create user profile")
+            # Return HTML error response for form requests (status 200 so HTMX processes it)
+            return HTMLResponse(content=f"""
+            <div style="color: red; padding: 1rem; border: 1px solid red; border-radius: 0.25rem; margin: 1rem 0;">
+                <p><strong>❌ Registration Failed</strong></p>
+                <p>Failed to create user profile. Please try again.</p>
+            </div>
+            """, status_code=200)
         
         logger.info(f"Registration successful for user: {email}")
         
@@ -435,7 +457,7 @@ async def create_opportunity_page(request: Request, company_id: str, user = Depe
 
 @app.get("/opportunities/{opportunity_id}", response_class=HTMLResponse)
 async def opportunity_detail(request: Request, opportunity_id: str, user = Depends(require_auth)):
-    """Opportunity detail page with application form for talent users"""
+    """Opportunity detail page with application form for talent users and assessment for company users"""
     # Get opportunity
     opportunity = await firestore_service.get_opportunity(opportunity_id)
     if not opportunity:
@@ -451,6 +473,12 @@ async def opportunity_detail(request: Request, opportunity_id: str, user = Depen
     if user_profile.get('user_type') == 'talent':
         has_applied = await firestore_service.check_existing_application(opportunity_id, user['uid'])
     
+    # Get applications count for company users who own this opportunity
+    applications_count = 0
+    if user_profile.get('user_type') == 'company' and user_profile.get('company_id') == opportunity.get('company_id'):
+        applications = await firestore_service.get_applications_by_opportunity(opportunity_id)
+        applications_count = len(applications)
+    
     logger.info(f"Opportunity detail accessed: {opportunity_id} by user: {user.get('email')}")
     return templates.TemplateResponse("opportunity_detail.html", {
         "request": request,
@@ -458,6 +486,7 @@ async def opportunity_detail(request: Request, opportunity_id: str, user = Depen
         "user_profile": user_profile,
         "opportunity": opportunity,
         "has_applied": has_applied,
+        "applications_count": applications_count,
         "firebase_config": web_config
     })
 
@@ -506,7 +535,7 @@ async def chat_with_agent(
         contextual_message = f"[User type: {user_type}] {message}"
         
         # First, create or ensure session exists (call ADK endpoint directly)
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
             # Create session first - this is required before sending messages
             session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             try:
@@ -626,7 +655,7 @@ async def create_opportunity_chat(
         contextual_message = f"[User type: company, Task: create_opportunity, Company: {company_name}, Company ID: {company_id}] {message}"
         
         # Send message to agent via ADK
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
             # Create session first
             session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             try:
@@ -1226,6 +1255,153 @@ async def test_opportunities(company_id: str):
         }
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/api/opportunities/{opportunity_id}/assess")
+async def assess_candidates(
+    request: Request,
+    opportunity_id: str,
+    message: str = Form(...),
+    user = Depends(require_auth)
+):
+    """Chat with assessment agent for candidate evaluation via HTMX"""
+    try:
+        user_profile = await firestore_service.get_user_profile(user['uid'])
+        if not user_profile:
+            raise HTTPException(status_code=400, detail="User profile not found")
+        
+        # Get opportunity and verify ownership
+        opportunity = await firestore_service.get_opportunity(opportunity_id)
+        if not opportunity:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        
+        # Verify user has access to assess candidates for this opportunity
+        if user_profile.get('user_type') != 'company' or user_profile.get('company_id') != opportunity.get('company_id'):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get applications for this opportunity
+        applications = await firestore_service.get_applications_by_opportunity(opportunity_id)
+        
+        # Get agent name from the mounted ADK app
+        from job_matching_agent.agent import root_agent
+        agent_name = root_agent.name
+        
+        # Prepare session and user IDs
+        session_id = f"assessment_session_{user['uid']}_{opportunity_id}"
+        user_id = user["uid"]
+        
+        # Add context for assessment task
+        company_info = await firestore_service.get_company_info(user_profile.get('company_id'))
+        company_name = company_info.get('name', 'Unknown Company') if company_info else 'Unknown Company'
+        
+        # Create rich context message with opportunity and applications data
+        # Format data properly for the assessment agent tool
+        opportunity_data = {
+            "title": opportunity.get('title', ''),
+            "description": opportunity.get('description', ''),
+            "requirements": opportunity.get('requirements', ''),
+            "survey_questions": opportunity.get('survey_questions', []),
+            "company_name": company_name,
+            "company_id": user_profile.get('company_id'),
+            "opportunity_id": opportunity_id
+        }
+        
+        # Format applications data
+        applications_data = []
+        for app in applications:
+            applications_data.append({
+                "applicant_name": app.get('applicant_name', 'Unknown'),
+                "applicant_email": app.get('applicant_email', 'Unknown'),
+                "applied_at": str(app.get('applied_at', 'Unknown')),
+                "survey_responses": app.get('survey_responses', {})
+            })
+        
+        # Create structured request for assessment agent
+        assessment_request = f"""Assess candidates for this position:
+
+**Job Opportunity:** {opportunity_data['title']}
+**Company:** {opportunity_data['company_name']}
+**Description:** {opportunity_data['description']}
+**Requirements:** {opportunity_data.get('requirements', 'No specific requirements listed')}
+
+**Survey Questions:**
+{chr(10).join([f"{i+1}. {q.get('question', '')}" for i, q in enumerate(opportunity_data['survey_questions'])])}
+
+**Candidates to Evaluate:** {len(applications_data)} applicant(s)
+{chr(10).join([f"- {app['applicant_name']} ({app['applicant_email']})" for app in applications_data])}
+
+**User Request:** {message}
+
+Please provide a comprehensive assessment including candidate ranking, strengths/weaknesses, and interview recommendations."""
+
+        contextual_message = f"[User type: company, Task: assess_candidates, Opportunity ID: {opportunity_id}] {assessment_request}"
+        
+        # Send message to agent via ADK
+        async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
+            # Create session first
+            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            try:
+                session_response = await client.post(session_url, json={"state": {}})
+                logger.debug(f"Assessment session creation response: {session_response.status_code}")
+            except Exception as e:
+                logger.debug(f"Assessment session creation note: {e}")
+            
+            # Send message to agent
+            run_url = "http://localhost:8000/adk/run"
+            run_payload = {
+                "appName": agent_name,
+                "userId": user_id,
+                "sessionId": session_id,
+                "newMessage": {
+                    "role": "user",
+                    "parts": [{"text": contextual_message}]
+                },
+                "streaming": False
+            }
+            
+            logger.debug(f"Sending assessment payload: {run_payload}")
+            run_response = await client.post(run_url, json=run_payload)
+            
+            if run_response.status_code != 200:
+                error_details = run_response.text
+                logger.error(f"ADK assessment error {run_response.status_code}: {error_details}")
+                raise httpx.HTTPStatusError(f"ADK endpoint error: {error_details}", request=run_response.request, response=run_response)
+            
+            # Parse the response
+            events = run_response.json()
+            final_response = f"I'm ready to help you assess the {len(applications_data)} candidate{'s' if len(applications_data) != 1 else ''} for this position. What would you like to know?"
+            
+            if isinstance(events, list):
+                for event in events:
+                    if event.get("turnComplete") and event.get("content"):
+                        content = event["content"]
+                        if content.get("parts"):
+                            for part in content["parts"]:
+                                if part.get("text"):
+                                    final_response = part["text"]
+                                    break
+                            if final_response != f"I'm ready to help you assess the {len(applications_data)} candidate{'s' if len(applications_data) != 1 else ''} for this position. What would you like to know?":
+                                break
+                    elif event.get("content") and event.get("content", {}).get("parts"):
+                        content = event["content"]
+                        for part in content["parts"]:
+                            if part.get("text"):
+                                final_response = part["text"]
+                                break
+        
+        # Return HTMX partial template
+        return templates.TemplateResponse("components/chat_message.html", {
+            "request": request,
+            "user_message": message,
+            "agent_response": final_response,
+            "timestamp": datetime.now()
+        })
+        
+    except Exception as e:
+        logger.error(f"Assessment chat error: {e}")
+        return templates.TemplateResponse("components/chat_error.html", {
+            "request": request,
+            "error": "Failed to process assessment message. Please try again."
+        })
 
 if __name__ == "__main__":
     import uvicorn
