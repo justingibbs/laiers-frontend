@@ -2,6 +2,7 @@
 from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
 from .job_posting_agent import job_posting_agent
+from typing import Optional
 
 MODEL = "gemini-2.0-flash-lite"
 
@@ -40,7 +41,7 @@ def get_user_context(message: str) -> dict:
     
     return context
 
-def analyze_user_needs(user_type: str, task: str = None) -> str:
+def analyze_user_needs(user_type: str, task: Optional[str] = None) -> str:
     """Analyze what the user likely needs based on their type and task"""
     if user_type == "talent":
         return """
@@ -75,8 +76,8 @@ def analyze_user_needs(user_type: str, task: str = None) -> str:
     else:
         return "Unknown user type - please provide more context about how I can help you."
 
-job_matching_coordinator = LlmAgent(
-    name="job_matching_coordinator",
+job_matching_agent = LlmAgent(
+    name="job_matching_agent",
     model=MODEL,
     description="Main job matching assistant that handles talent and company needs, with specialized sub-agents for complex tasks.",
     instruction="""You are a job matching assistant for a professional platform.
@@ -111,4 +112,4 @@ Always maintain a professional, helpful, and encouraging tone. Ask follow-up que
 )
 
 # This MUST be named 'root_agent' for ADK to discover it
-root_agent = job_matching_coordinator
+root_agent = job_matching_agent
