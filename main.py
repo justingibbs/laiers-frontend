@@ -1087,9 +1087,9 @@ async def get_form_fields(request: Request, user_type: str):
             <label for="company_id">Select Your Company</label>
             <select name="company_id" required>
                 <option value="">Choose a company...</option>
-                <option value="company_1">Company_1</option>
-                <option value="company_2">Company_2</option>
-                <option value="company_3">Company_3</option>
+                <option value="company_1">Horizon_Health_Network</option>
+                <option value="company_2">BuildWell_Construction_Group</option>
+                <option value="company_3">Sparkly_Studios</option>
             </select>
         </div>
         
