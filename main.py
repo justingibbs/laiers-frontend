@@ -36,7 +36,20 @@ logger = logging.getLogger(__name__)
 
 # Load Firebase Web Config
 def load_firebase_web_config():
-    # First try to load from file (for local development)
+    # In production, try Secret Manager first
+    if ENVIRONMENT == "production":
+        try:
+            from utils.secrets import load_firebase_config_from_secrets
+            config = load_firebase_config_from_secrets()
+            if config:
+                logger.info("Web Config loaded successfully from Secret Manager")
+                return config
+        except ImportError:
+            logger.warning("Secret Manager utilities not available")
+        except Exception as e:
+            logger.error(f"Error loading from Secret Manager: {e}")
+    
+    # Fallback 1: Try to load from file (for local development)
     try:
         with open("config/firebase-web-config.json", "r") as f:
             config = json.load(f)
@@ -47,7 +60,7 @@ def load_firebase_web_config():
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing web config file: {e}")
     
-    # Fallback to environment variables (for production)
+    # Fallback 2: Try environment variables
     try:
         config = {
             "apiKey": os.getenv("FIREBASE_API_KEY"),
@@ -988,6 +1001,45 @@ async def debug_adk():
         }
     except Exception as e:
         return {"error": str(e), "note": "Make sure job_matching_agent directory exists with proper structure"}
+
+@app.get("/debug/secrets")
+async def debug_secrets():
+    """Debug endpoint to check Secret Manager configuration"""
+    try:
+        from utils.secrets import get_secret, load_firebase_config_from_secrets
+        
+        # Test individual secret access
+        api_key = get_secret("firebase-api-key")
+        auth_domain = get_secret("firebase-auth-domain")
+        
+        # Test complete config loading
+        config = load_firebase_config_from_secrets()
+        
+        return {
+            "status": "ok",
+            "environment": ENVIRONMENT,
+            "project_id": PROJECT_ID,
+            "secret_manager_available": True,
+            "api_key_available": bool(api_key),
+            "auth_domain_available": bool(auth_domain),
+            "complete_config_available": bool(config),
+            "config_keys": list(config.keys()) if config else [],
+            "timestamp": datetime.now().isoformat()
+        }
+    except ImportError as e:
+        return {
+            "status": "error",
+            "error": "Secret Manager utilities not available",
+            "details": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Debug secrets error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @app.get("/debug/routes")
 async def debug_routes():

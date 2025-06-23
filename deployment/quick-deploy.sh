@@ -26,6 +26,14 @@ fi
 case "${1:-help}" in
     "deploy")
         echo "🚀 Deploying in maintenance mode..."
+        # Grant Secret Manager access
+        COMPUTE_SA="${PROJECT_ID}-compute@developer.gserviceaccount.com"
+        echo "🔑 Granting Secret Manager access..."
+        gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:$COMPUTE_SA" \
+            --role="roles/secretmanager.secretAccessor" \
+            --quiet 2>/dev/null || echo "   (Permission may already exist)"
+        
         gcloud run deploy "$SERVICE_NAME" \
             --source . \
             --region "$REGION" \
