@@ -36,17 +36,53 @@ logger = logging.getLogger(__name__)
 
 # Load Firebase Web Config
 def load_firebase_web_config():
+    # In production, try Secret Manager first
+    if ENVIRONMENT == "production":
+        try:
+            from utils.secrets import load_firebase_config_from_secrets
+            config = load_firebase_config_from_secrets()
+            if config:
+                logger.info("Web Config loaded successfully from Secret Manager")
+                return config
+        except ImportError:
+            logger.warning("Secret Manager utilities not available")
+        except Exception as e:
+            logger.error(f"Error loading from Secret Manager: {e}")
+    
+    # Fallback 1: Try to load from file (for local development)
     try:
         with open("config/firebase-web-config.json", "r") as f:
             config = json.load(f)
-            logger.debug("Web Config loaded successfully")
+            logger.debug("Web Config loaded successfully from file")
             return config
     except FileNotFoundError:
-        logger.warning("firebase-web-config.json not found. Firebase client authentication will not work.")
-        return {}
+        logger.info("firebase-web-config.json not found, trying environment variables...")
     except json.JSONDecodeError as e:
-        logger.error(f"Error parsing web config: {e}")
-        return {}
+        logger.error(f"Error parsing web config file: {e}")
+    
+    # Fallback 2: Try environment variables
+    try:
+        config = {
+            "apiKey": os.getenv("FIREBASE_API_KEY"),
+            "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN"),
+            "projectId": os.getenv("GOOGLE_CLOUD_PROJECT"),
+            "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET"),
+            "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID"),
+            "appId": os.getenv("FIREBASE_APP_ID")
+        }
+        
+        # Check if all required fields are present
+        if all(config.values()):
+            logger.info("Web Config loaded successfully from environment variables")
+            return config
+        else:
+            missing_vars = [k for k, v in config.items() if not v]
+            logger.warning(f"Missing Firebase environment variables: {missing_vars}")
+    except Exception as e:
+        logger.error(f"Error loading web config from environment: {e}")
+    
+    logger.warning("Firebase client authentication will not work - no valid config found")
+    return {}
 
 # Get project ID from web config or environment
 web_config = load_firebase_web_config()
@@ -54,6 +90,8 @@ PROJECT_ID = web_config.get('projectId') or GOOGLE_CLOUD_PROJECT
 
 if not PROJECT_ID:
     logger.error("Firebase project ID not found in web config or GOOGLE_CLOUD_PROJECT environment variable")
+    logger.error(f"web_config: {web_config}")
+    logger.error(f"GOOGLE_CLOUD_PROJECT: {GOOGLE_CLOUD_PROJECT}")
     raise ValueError("Firebase project ID not found. Set GOOGLE_CLOUD_PROJECT environment variable.")
 
 logger.info(f"Using Firebase project ID: {PROJECT_ID}")
@@ -112,7 +150,7 @@ logger.info(f"Looking for agents in directory: {AGENT_DIR}")
 try:
     adk_app = get_fast_api_app(
         agents_dir=AGENT_DIR,
-        session_db_url="sqlite:///./sessions.db",
+        # Remove session_db_url to use ADK's default cloud-based managed sessions
         allow_origins=["*"] if ENVIRONMENT == "development" else [],
         web=True,  # This enables the dev UI
         trace_to_cloud=False
@@ -964,6 +1002,45 @@ async def debug_adk():
     except Exception as e:
         return {"error": str(e), "note": "Make sure job_matching_agent directory exists with proper structure"}
 
+@app.get("/debug/secrets")
+async def debug_secrets():
+    """Debug endpoint to check Secret Manager configuration"""
+    try:
+        from utils.secrets import get_secret, load_firebase_config_from_secrets
+        
+        # Test individual secret access
+        api_key = get_secret("firebase-api-key")
+        auth_domain = get_secret("firebase-auth-domain")
+        
+        # Test complete config loading
+        config = load_firebase_config_from_secrets()
+        
+        return {
+            "status": "ok",
+            "environment": ENVIRONMENT,
+            "project_id": PROJECT_ID,
+            "secret_manager_available": True,
+            "api_key_available": bool(api_key),
+            "auth_domain_available": bool(auth_domain),
+            "complete_config_available": bool(config),
+            "config_keys": list(config.keys()) if config else [],
+            "timestamp": datetime.now().isoformat()
+        }
+    except ImportError as e:
+        return {
+            "status": "error",
+            "error": "Secret Manager utilities not available",
+            "details": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Debug secrets error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @app.get("/debug/routes")
 async def debug_routes():
     """Debug endpoint to see all available routes"""
@@ -1087,9 +1164,9 @@ async def get_form_fields(request: Request, user_type: str):
             <label for="company_id">Select Your Company</label>
             <select name="company_id" required>
                 <option value="">Choose a company...</option>
-                <option value="company_1">Company_1</option>
-                <option value="company_2">Company_2</option>
-                <option value="company_3">Company_3</option>
+                <option value="company_1">Horizon_Health_Network</option>
+                <option value="company_2">BuildWell_Construction_Group</option>
+                <option value="company_3">Sparkly_Studios</option>
             </select>
         </div>
         

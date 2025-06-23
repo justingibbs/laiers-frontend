@@ -10,11 +10,12 @@ dependencies = [
     "python-multipart",
     "httpx",
     "google-adk",
-    "google-cloud-firestore", 
+    "google-cloud-firestore",
     "firebase-admin",
     "pydantic[email]",
     "python-dotenv",
-    "uvicorn[standard]"
+    "uvicorn[standard]",
+    "google-cloud-secret-manager>=2.24.0",
 ]
 
 [dependency-groups]

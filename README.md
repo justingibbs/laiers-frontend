@@ -51,6 +51,9 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    
    # Enable Firestore API
    gcloud services enable firestore.googleapis.com
+   
+   # Enable Secret Manager API (for secure production config)
+   gcloud services enable secretmanager.googleapis.com
    ```
    
    **Authenticate:**
@@ -64,14 +67,15 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    2. Create a new project or select existing project
    3. Enable Authentication with Email/Password provider
    4. Enable Firestore Database in test mode
-   5. **Download Service Account Key:**
+   5. **Download Service Account Key (for local development):**
       - Go to Project Settings → Service Accounts
       - Click "Generate new private key"
       - Save as `config/firebase-credentials.json`
-   6. **Download Web App Config:**
+   6. **Get Web App Config (for frontend authentication):**
       - Go to Project Settings → General → Your Apps
       - Add web app if needed, then copy config
-      - Save as `config/firebase-web-config.json`
+      - **For local development**: Save as `config/firebase-web-config.json`
+      - **For production**: Use environment variables (see below)
 
 5. **Environment Setup:**
    ```bash
@@ -97,6 +101,15 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
    FIREBASE_CREDENTIALS_PATH=config/firebase-credentials.json
    
    # PRODUCTION: Use Application Default Credentials (no file needed)
+   
+   # Firebase Web Config (for frontend authentication)
+   # DEVELOPMENT: Uses config/firebase-web-config.json file
+   # PRODUCTION: Set these environment variables (required for Cloud Run)
+   FIREBASE_API_KEY=your-firebase-api-key
+   FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+   FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
+   FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+   FIREBASE_APP_ID=your-firebase-app-id
    
    # ADK Configuration (optional)
    ADK_BUCKET_NAME=your-bucket-name
@@ -494,6 +507,7 @@ laiers/
 │   ├── firestore.py           # Enhanced Firestore operations + opportunity management
 │   ├── auth.py                # Firebase authentication helpers
 │   ├── middleware.py          # Maintenance mode middleware
+│   ├── secrets.py             # Google Cloud Secret Manager utilities
 │   └── model.py               # Pydantic data models
 ├── templates/                 # Professional Jinja2 templates
 │   ├── base.html             # Base template with shared elements
@@ -525,8 +539,8 @@ laiers/
 │       ├── logo_laiers.png   # Main Laiers.ai logo
 │       └── favicon.ico       # Site favicon
 ├── config/                   # Configuration files
-│   ├── firebase-credentials.json      # Firebase service account (excluded from git)
-│   └── firebase-web-config.json       # Firebase web config
+│   ├── firebase-credentials.json      # Firebase service account (local dev only - excluded from git)
+│   └── firebase-web-config.json       # Firebase web config (local dev only - excluded from git)
 ├── deployment/              # Production deployment system
 │   ├── deploy.sh            # Full-featured deployment script
 │   ├── quick-deploy.sh      # Quick deployment commands
@@ -559,6 +573,7 @@ Key logging features:
 
 Enhanced debug endpoints:
 - **Component Status**: `/debug/adk` - Agent configuration and health
+- **Secret Manager Status**: `/debug/secrets` - Secret Manager configuration and access
 - **Route Discovery**: `/debug/routes` - All available application routes
 - **Firestore Data**: `/test/firestore-users` - User data debugging
 - **Opportunity Testing**: `/test/opportunities/{company_id}` - Opportunity data validation
@@ -625,6 +640,102 @@ The application requires comprehensive Firebase setup with enhanced security:
    - Example structure with all required fields
 
 Both configurations support the sophisticated user flows and opportunity management system.
+
+## Security and Configuration Management
+
+### Google Cloud Secret Manager Integration
+
+For production deployments, the application uses Google Cloud Secret Manager to securely store and manage sensitive configuration data like API keys and authentication credentials.
+
+#### Why Secret Manager?
+
+- **Enhanced Security**: No sensitive data in environment variables or container images
+- **Easy Rotation**: Update secrets without redeployment
+- **Audit Trail**: Track who accessed what secrets when
+- **IAM Integration**: Fine-grained access control with Google Cloud IAM
+- **Version Management**: Keep track of secret versions and rollback if needed
+
+#### Setting Up Secret Manager
+
+**1. Enable Secret Manager API:**
+```bash
+gcloud services enable secretmanager.googleapis.com
+```
+
+**2. Create Firebase Configuration Secrets:**
+```bash
+# Create individual Firebase config secrets
+echo "YOUR_FIREBASE_API_KEY" | gcloud secrets create firebase-api-key --data-file=-
+echo "YOUR_PROJECT_ID.firebaseapp.com" | gcloud secrets create firebase-auth-domain --data-file=-
+echo "YOUR_PROJECT_ID.firebasestorage.app" | gcloud secrets create firebase-storage-bucket --data-file=-
+echo "YOUR_MESSAGING_SENDER_ID" | gcloud secrets create firebase-messaging-sender-id --data-file=-
+echo "YOUR_FIREBASE_APP_ID" | gcloud secrets create firebase-app-id --data-file=-
+
+# Or create a complete config as JSON
+echo '{"apiKey":"YOUR_API_KEY","authDomain":"..."}' | gcloud secrets create firebase-web-config --data-file=-
+```
+
+**3. Grant Cloud Run Access to Secrets:**
+```bash
+# Get your project number
+PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format="value(projectNumber)")
+
+# Grant secret access to Cloud Run service account
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+    --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+```
+
+**4. Deploy with Secret Manager:**
+```bash
+# Deploy without sensitive environment variables
+gcloud run deploy job-matching-app \
+    --source . \
+    --region us-central1 \
+    --set-env-vars="ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT"
+```
+
+#### Configuration Loading Priority
+
+The application loads configuration in this order:
+
+1. **Production**: Google Cloud Secret Manager (most secure)
+2. **Development**: Local JSON files (`config/firebase-web-config.json`)
+3. **Fallback**: Environment variables (legacy support)
+
+#### Rotating API Keys
+
+With Secret Manager, rotating API keys is simple:
+
+```bash
+# Update the secret with new API key
+echo "NEW_API_KEY" | gcloud secrets versions add firebase-api-key --data-file=-
+
+# The change takes effect immediately - no redeployment needed
+```
+
+#### Testing Secret Manager
+
+Use the debug endpoint to verify Secret Manager integration:
+
+```bash
+# Test locally
+curl http://localhost:8000/debug/secrets
+
+# Test in production
+curl https://your-app-url/debug/secrets
+```
+
+Expected response when working correctly:
+```json
+{
+  "status": "ok",
+  "secret_manager_available": true,
+  "api_key_available": true,
+  "complete_config_available": true,
+  "config_keys": ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId"]
+}
+```
 
 ## Troubleshooting
 
@@ -820,12 +931,87 @@ except Exception as e:
 # Ensure collections are accessible in development mode
 ```
 
+#### 5. Google Cloud Secret Manager Issues (NEW)
+
+**Symptoms:**
+- Production login/registration fails with Firebase configuration errors
+- `/debug/secrets` shows `secret_manager_available: false` or empty config
+- API key rotation doesn't take effect
+- Permission denied errors accessing secrets
+
+**Solutions:**
+
+**A. Secret Manager Not Available:**
+```bash
+# Enable Secret Manager API
+gcloud services enable secretmanager.googleapis.com
+
+# Verify secrets exist
+gcloud secrets list | grep firebase
+```
+
+**B. Permission Denied Accessing Secrets:**
+```bash
+# Get your project number and service account
+PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format="value(projectNumber)")
+SERVICE_ACCOUNT="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+
+# Grant access to Secret Manager
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+    --member="serviceAccount:$SERVICE_ACCOUNT" \
+    --role="roles/secretmanager.secretAccessor"
+
+# Verify IAM binding
+gcloud projects get-iam-policy $GOOGLE_CLOUD_PROJECT \
+    --flatten="bindings[].members" \
+    --format="table(bindings.role,bindings.members)" \
+    --filter="bindings.members:$SERVICE_ACCOUNT"
+```
+
+**C. Secrets Not Loading in Production:**
+```bash
+# Test secret access from Cloud Run
+curl "https://your-app-url/debug/secrets"
+
+# Check logs for Secret Manager messages
+gcloud run services logs read job-matching-app --region=us-central1 | grep -i secret
+
+# Verify environment variable
+gcloud run services describe job-matching-app --region=us-central1 \
+    --format="value(spec.template.spec.containers[0].env[?(@.name=='ENVIRONMENT')].value)"
+```
+
+**D. API Key Rotation Issues:**
+```bash
+# Verify secret version was created
+gcloud secrets versions list firebase-api-key
+
+# Check if new version is being accessed
+gcloud secrets versions access latest --secret="firebase-api-key"
+
+# Force restart Cloud Run to pick up changes (usually not needed)
+gcloud run services update job-matching-app --region=us-central1
+```
+
+**E. Local Development Secret Testing:**
+```bash
+# Test Secret Manager utilities locally
+python -c "
+from utils.secrets import get_secret, load_firebase_config_from_secrets
+print('API Key available:', bool(get_secret('firebase-api-key')))
+config = load_firebase_config_from_secrets()
+print('Config loaded:', bool(config))
+print('Config keys:', list(config.keys()) if config else 'None')
+"
+```
+
 ### Enhanced Debug Endpoints
 
 Comprehensive debugging tools for the mature application:
 
 - **Application Health**: `http://localhost:8000/health` - Full system status including Firebase and Firestore
 - **Component Analysis**: `http://localhost:8000/debug/adk` - Agent configuration and component status
+- **Secret Manager Status**: `http://localhost:8000/debug/secrets` - Secret Manager configuration and access verification
 - **Route Discovery**: `http://localhost:8000/debug/routes` - All available routes with methods
 - **User Data**: `http://localhost:8000/test/firestore-users` - User profile debugging
 - **Opportunity System**: `http://localhost:8000/test/opportunities/{company_id}` - Opportunity data validation
@@ -878,13 +1064,35 @@ gcloud services enable firestore.googleapis.com
 # 1. Deploy with comprehensive validation
 ./deployment/quick-deploy.sh deploy
 
-# 2. Validate all systems including opportunities
+# 2. Set Firebase environment variables for production (REQUIRED for authentication)
+gcloud run services update job-matching-app \
+  --region us-central1 \
+  --set-env-vars="FIREBASE_API_KEY=your-firebase-api-key,FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com,FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app,FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id,FIREBASE_APP_ID=your-firebase-app-id"
+
+# 3. Validate all systems including opportunities
 curl "$(./deployment/quick-deploy.sh url)/health"
 curl "$(./deployment/quick-deploy.sh url)/test/opportunities/company_1"
 
-# 3. Professional go-live process
+# 4. Professional go-live process
 ./deployment/quick-deploy.sh live
 ```
+
+**⚠️ Important: Firebase Environment Variables**
+
+For production deployment, you MUST set Firebase environment variables for frontend authentication to work. Get these values from your Firebase project:
+
+1. Go to Firebase Console → Project Settings → General → Your Apps
+2. Copy the config values and set them as environment variables:
+   ```bash
+   # Example values (replace with your actual config)
+   FIREBASE_API_KEY=
+   FIREBASE_AUTH_DOMAIN=
+   FIREBASE_STORAGE_BUCKET=
+   FIREBASE_MESSAGING_SENDER_ID=
+   FIREBASE_APP_ID=
+   ```
+
+Without these variables, users won't be able to register or login.
 
 ### 📊 Production Monitoring
 

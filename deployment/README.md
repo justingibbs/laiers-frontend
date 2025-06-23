@@ -3,7 +3,7 @@
 This guide covers deploying your FastAPI + Google ADK application to Google Cloud Run with maintenance mode support.
 
 Cloud URL:
-https://job-matching-app-215827770748.us-central1.run.app/
+https://your-app-url.us-central1.run.app/
 
 ## 🚀 Quick Start
 
@@ -29,6 +29,7 @@ https://job-matching-app-215827770748.us-central1.run.app/
    - Cloud Build API  
    - Vertex AI API
    - AI Platform API
+   - Secret Manager API (for secure configuration)
 
 ## 🎯 **The Two Commands You Need**
 
@@ -146,11 +147,27 @@ If you prefer manual control:
 gcloud run deploy job-matching-app \
   --source . \
   --region us-central1 \
-  --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=your-project-id,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=true,PORT=8080" \
+  --set-env-vars="MAINTENANCE_MODE=true,ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=your-project-id,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=true,PORT=8080,FIREBASE_API_KEY=your-firebase-api-key,FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com,FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app,FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id,FIREBASE_APP_ID=your-firebase-app-id" \
   --allow-unauthenticated \
   --memory=1Gi \
   --max-instances=10
 ```
+
+**🔐 Enhanced Security: Secret Manager Integration**
+
+The application now uses **Google Cloud Secret Manager** for secure configuration management in production. This provides enhanced security and eliminates the need for sensitive environment variables.
+
+**Production (Recommended - Secret Manager):**
+- Firebase configuration stored securely in Secret Manager
+- No sensitive data in environment variables or container images
+- Easy API key rotation without redeployment
+- Enhanced security with IAM access controls
+
+**Legacy (Environment Variables):**
+If using environment variables instead of Secret Manager, get these values from:
+1. Firebase Console → Project Settings → General → Your Apps
+2. Copy the config object values to environment variables
+3. These values are safe to use as environment variables (they're public client config)
 
 ### Toggle Maintenance Mode
 ```bash
@@ -192,9 +209,72 @@ gcloud run deploy job-matching-app \
 **Option 2: Application Default Credentials**
 If your Cloud Run service runs in the same project as Firebase, it will automatically use the default compute service account.
 
+## 🔐 Secret Manager Setup (Recommended)
+
+### Setting Up Secure Configuration
+
+**1. Enable Secret Manager API:**
+```bash
+gcloud services enable secretmanager.googleapis.com
+```
+
+**2. Create Firebase Configuration Secrets:**
+```bash
+# Create individual Firebase config secrets
+echo "YOUR_FIREBASE_API_KEY" | gcloud secrets create firebase-api-key --data-file=-
+echo "YOUR_PROJECT_ID.firebaseapp.com" | gcloud secrets create firebase-auth-domain --data-file=-
+echo "YOUR_PROJECT_ID.firebasestorage.app" | gcloud secrets create firebase-storage-bucket --data-file=-
+echo "YOUR_MESSAGING_SENDER_ID" | gcloud secrets create firebase-messaging-sender-id --data-file=-
+echo "YOUR_FIREBASE_APP_ID" | gcloud secrets create firebase-app-id --data-file=-
+
+# Or create a complete config as JSON (alternative)
+echo '{"apiKey":"YOUR_API_KEY","authDomain":"..."}' | gcloud secrets create firebase-web-config --data-file=-
+```
+
+**3. Grant Cloud Run Access to Secrets:**
+```bash
+# Get your project number and service account
+PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format="value(projectNumber)")
+SERVICE_ACCOUNT="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+
+# Grant secret access to Cloud Run
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+    --member="serviceAccount:$SERVICE_ACCOUNT" \
+    --role="roles/secretmanager.secretAccessor"
+```
+
+**4. Deploy with Secret Manager:**
+```bash
+# Deploy with minimal environment variables (secrets loaded automatically)
+gcloud run deploy job-matching-app \
+    --source . \
+    --region us-central1 \
+    --set-env-vars="ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,MAINTENANCE_MODE=true"
+```
+
+**5. Test Secret Manager Integration:**
+```bash
+# Verify secrets are loading correctly
+curl "$(./deployment/quick-deploy.sh url)/debug/secrets"
+
+# Expected response: {"status": "ok", "secret_manager_available": true, ...}
+```
+
+### API Key Rotation with Secret Manager
+
+With Secret Manager, rotating API keys is simple and secure:
+
+```bash
+# Update the secret with new API key
+echo "NEW_FIREBASE_API_KEY" | gcloud secrets versions add firebase-api-key --data-file=-
+
+# The change takes effect immediately - no redeployment needed!
+# Cloud Run automatically picks up the latest secret version
+```
+
 ## 🌍 Environment Variables
 
-### Required for Cloud Run
+### Required for Cloud Run (with Secret Manager)
 ```bash
 ENVIRONMENT=production
 GOOGLE_CLOUD_PROJECT=your-project-id
@@ -202,6 +282,19 @@ GOOGLE_CLOUD_LOCATION=us-central1
 GOOGLE_GENAI_USE_VERTEXAI=true
 PORT=8080
 MAINTENANCE_MODE=false
+
+# Note: Firebase configuration is now loaded from Secret Manager
+# No need to set Firebase environment variables in production
+```
+
+### Legacy (Environment Variables)
+```bash
+# Only needed if not using Secret Manager
+FIREBASE_API_KEY=your-firebase-api-key
+FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+FIREBASE_APP_ID=your-firebase-app-id
 ```
 
 ### Optional
@@ -291,9 +384,43 @@ gcloud services enable vertexai.googleapis.com
 ```
 
 **2. Firebase Connection Issues**
-- Verify `GOOGLE_CLOUD_PROJECT` matches Firebase project
+- **Backend (Admin SDK)**: Verify `GOOGLE_CLOUD_PROJECT` matches Firebase project
+- **Frontend (Authentication)**: Ensure Firebase environment variables are set correctly
+- **Missing Config**: Check if Firebase web config is empty `{}` in browser dev tools
+- **Environment Variables**: Verify all 5 Firebase env vars are set in Cloud Run
 - Check service account permissions
 - Ensure Firebase Admin SDK is properly initialized
+
+**Test Firebase Config Loading:**
+```bash
+# Check if Firebase config is loading in production
+curl -s "$(./deployment/quick-deploy.sh url)/login" | grep -A10 "firebase-config"
+
+# Should show populated config, not empty {}
+
+# Test Secret Manager specifically
+curl -s "$(./deployment/quick-deploy.sh url)/debug/secrets"
+
+# Should show: {"status": "ok", "secret_manager_available": true, ...}
+```
+
+**5. Secret Manager Issues (NEW)**
+```bash
+# Enable Secret Manager API if not enabled
+gcloud services enable secretmanager.googleapis.com
+
+# Verify secrets exist
+gcloud secrets list | grep firebase
+
+# Grant proper permissions to Cloud Run service account
+PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format="value(projectNumber)")
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+    --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+
+# Test secret access
+gcloud secrets versions access latest --secret="firebase-api-key"
+```
 
 **3. Container Build Failures**
 - Check `Dockerfile` syntax

@@ -92,6 +92,13 @@ deploy_service() {
     ENV_VARS="$ENV_VARS,GOOGLE_GENAI_USE_VERTEXAI=true"
     ENV_VARS="$ENV_VARS,MAINTENANCE_MODE=$maintenance_mode"
     
+    # Grant Secret Manager access to Cloud Run service account
+    COMPUTE_SA="${PROJECT_ID}-compute@developer.gserviceaccount.com"
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+        --member="serviceAccount:$COMPUTE_SA" \
+        --role="roles/secretmanager.secretAccessor" \
+        --quiet || log_warning "Failed to grant Secret Manager access (may already exist)"
+    
     # Deploy with gcloud run deploy
     gcloud run deploy "$SERVICE_NAME" \
         --source . \

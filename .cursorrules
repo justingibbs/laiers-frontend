@@ -69,13 +69,14 @@ laiers/
 │       ├── logo_laiers.png      # Main Laiers.ai logo
 │       └── favicon.ico          # Site favicon
 ├── config/
-│   ├── firebase-credentials.json     # Firebase service account key
-│   └── firebase-web-config.json      # Firebase web app config
+│   ├── firebase-credentials.json     # Firebase service account key (local dev only)
+│   └── firebase-web-config.json      # Firebase web app config (local dev only - excluded from git)
 ├── utils/                # Utility modules (keep minimal)
 │   ├── __init__.py
 │   ├── firestore.py      # Firestore helpers + opportunity management
 │   ├── auth.py           # Firebase authentication helpers
 │   ├── middleware.py     # Maintenance mode middleware
+│   ├── secrets.py        # Google Cloud Secret Manager utilities
 │   └── model.py          # Pydantic models (renamed from models.py)
 ├── deployment/           # Cloud Run deployment system
 │   ├── deploy.sh         # Full-featured deployment script
@@ -499,6 +500,7 @@ assessment_agent = LlmAgent(
 
 ### Debug URLs
 - **Debug Agent**: `http://localhost:8000/debug/adk`
+- **Debug Secrets**: `http://localhost:8000/debug/secrets` - Secret Manager status
 - **Health Check**: `http://localhost:8000/health`
 - **Test Opportunities**: `http://localhost:8000/test/opportunities/{company_id}` - Debug opportunities
 
@@ -511,6 +513,7 @@ assessment_agent = LlmAgent(
 - **Template Organization**: Two-panel dashboard (profile + chat), component-based HTMX responses
 - **Assessment Feature**: Include assessment interface on opportunity detail pages for company users
 - **Firebase Auth**: Use session cookies, not JWT tokens in requests
+- **Secret Manager Security**: Use Google Cloud Secret Manager for all sensitive configuration in production
 - **Context Passing**: Always pass user context to ADK agent (user_type, task, etc.)
 - **Error Handling**: Use try/except blocks with proper logging
 - **HTMX Patterns**: Form-based chat interface, partial template responses
@@ -537,6 +540,7 @@ assessment_agent = LlmAgent(
 - **Environment Variables**: Must have `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`
 - **API Dependencies**: Vertex AI API must be enabled in Google Cloud Console
 - **Authentication**: Use Application Default Credentials (gcloud auth application-default login)
+- **Secret Manager**: Use `roles/secretmanager.secretAccessor` for Cloud Run service account
 - **Timeout Handling**: Use 30-second timeouts for complex agent operations like assessment
 
 ### What to NEVER suggest:
@@ -548,6 +552,99 @@ assessment_agent = LlmAgent(
 - **Different agent frameworks**: ADK only, no LangChain/CrewAI alternatives
 - **Direct ADK imports**: Use HTTP API calls, not direct Python imports of ADK classes
 - **Assessment without sub-agents**: Always use assessment_agent for candidate evaluation
+- **Hardcoded secrets**: Never commit API keys or sensitive config to git
+- **Insecure secret handling**: Don't use environment variables for sensitive data in production
+
+### Secret Manager Pattern - SECURE CONFIGURATION:
+```python
+# utils/secrets.py - Complete Secret Manager implementation
+from google.cloud import secretmanager
+import os
+import json
+import logging
+
+def get_secret(secret_name: str, version: str = "latest") -> Optional[str]:
+    """Retrieve a secret from Google Cloud Secret Manager"""
+    try:
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_name}/versions/{version}"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        logger.error(f"Error retrieving secret {secret_name}: {e}")
+        return None
+
+def load_firebase_config_from_secrets() -> Dict[str, Any]:
+    """Load Firebase configuration from Secret Manager with fallback"""
+    # Try complete config as JSON first
+    complete_config = get_secret("firebase-web-config")
+    if complete_config:
+        try:
+            return json.loads(complete_config)
+        except json.JSONDecodeError:
+            pass
+    
+    # Fallback to individual secrets
+    config = {
+        "apiKey": get_secret("firebase-api-key"),
+        "authDomain": get_secret("firebase-auth-domain"),
+        "projectId": os.getenv("GOOGLE_CLOUD_PROJECT"),
+        "storageBucket": get_secret("firebase-storage-bucket"),
+        "messagingSenderId": get_secret("firebase-messaging-sender-id"),
+        "appId": get_secret("firebase-app-id")
+    }
+    
+    return config if all(config.values()) else {}
+
+# main.py - Enhanced config loading with Secret Manager priority
+def load_firebase_web_config():
+    if ENVIRONMENT == "production":
+        try:
+            from utils.secrets import load_firebase_config_from_secrets
+            config = load_firebase_config_from_secrets()
+            if config:
+                logger.info("Web Config loaded successfully from Secret Manager")
+                return config
+        except Exception as e:
+            logger.error(f"Error loading from Secret Manager: {e}")
+    
+    # Fallback to file (development) then environment variables
+    try:
+        with open("config/firebase-web-config.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        pass
+    
+    # Environment variable fallback
+    config = {
+        "apiKey": os.getenv("FIREBASE_API_KEY"),
+        "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN"),
+        "projectId": os.getenv("GOOGLE_CLOUD_PROJECT"),
+        "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET"),
+        "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID"),
+        "appId": os.getenv("FIREBASE_APP_ID")
+    }
+    return config if all(config.values()) else {}
+```
+
+### Secret Manager Deployment Pattern:
+```bash
+# Create secrets in Secret Manager
+echo "your-api-key" | gcloud secrets create firebase-api-key --data-file=-
+echo "your-auth-domain" | gcloud secrets create firebase-auth-domain --data-file=-
+
+# Grant Cloud Run access to secrets
+gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+
+# Deploy with Secret Manager support (no secrets in environment variables)
+gcloud run deploy job-matching-app \
+    --source . \
+    --region us-central1 \
+    --set-env-vars="ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=PROJECT_ID"
+```
 
 ### Error Handling Pattern - UPDATED:
 ```python
@@ -661,6 +758,34 @@ This is NORMAL behavior. ADK reuses existing sessions. Only worry if message sen
 - Wait 2-3 minutes after enabling
 - Verify project ID matches in environment variables
 
-When writing code, always reference these ADK integration patterns with sub-agent architecture. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer. **Always verify Google Cloud setup before troubleshooting code issues.**
+### Secret Manager Issues - NEW
 
-**For assessment features, ensure proper sub-agent integration and data format handling.**
+**Secret Manager Permission Denied:**
+1. **Enable Secret Manager API**: `gcloud services enable secretmanager.googleapis.com`
+2. **Grant Service Account Access**:
+   ```bash
+   gcloud projects add-iam-policy-binding PROJECT_ID \
+     --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+   ```
+3. **Verify Secret Exists**: `gcloud secrets list | grep firebase`
+4. **Test Secret Access**: Use `/debug/secrets` endpoint
+
+**Secrets Not Loading:**
+1. **Check Environment**: Verify `ENVIRONMENT=production` is set in Cloud Run
+2. **Verify Project ID**: Ensure `GOOGLE_CLOUD_PROJECT` matches secret location
+3. **Test Locally**: Run `python -c "from utils.secrets import get_secret; print(get_secret('firebase-api-key'))"`
+4. **Check Logs**: Look for "Successfully loaded Firebase config from Secret Manager"
+
+**API Key Rotation Workflow:**
+```bash
+# Update secret with new API key
+echo "NEW_API_KEY" | gcloud secrets versions add firebase-api-key --data-file=-
+
+# Restart Cloud Run to pick up new secret (optional - usually automatic)
+gcloud run services update job-matching-app --region=us-central1
+```
+
+When writing code, always reference these ADK integration patterns with sub-agent architecture and Secret Manager security. The key insight is that ADK provides the agent backend while your FastAPI app provides the custom authentication and user interface layer. **Always verify Google Cloud setup and Secret Manager permissions before troubleshooting code issues.**
+
+**For assessment features, ensure proper sub-agent integration and data format handling. For production security, always use Secret Manager for sensitive configuration.**

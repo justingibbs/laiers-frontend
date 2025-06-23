@@ -25,8 +25,14 @@ COPY uv.lock ./
 # Install dependencies using UV (as root to avoid permission issues)
 RUN uv sync --frozen --no-dev
 
-# Copy application code
-COPY . .
+# Copy application code - be explicit about directories
+COPY main.py ./
+COPY run.py ./
+COPY job_matching_agent/ ./job_matching_agent/
+COPY utils/ ./utils/
+COPY templates/ ./templates/
+COPY static/ ./static/
+COPY config/ ./config/
 
 # Create non-root user for security after installing dependencies
 RUN useradd --create-home --shell /bin/bash app && \

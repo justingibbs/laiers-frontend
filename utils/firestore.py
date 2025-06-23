@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 # Define predefined company list
 AVAILABLE_COMPANIES = [
-    {"id": "company_1", "name": "Company_1", "description": "Leading tech company focused on innovation"},
-    {"id": "company_2", "name": "Company_2", "description": "Global consulting and services firm"},
-    {"id": "company_3", "name": "Company_3", "description": "Fast-growing startup in fintech space"}
+    {"id": "company_1", "name": "Horizon Health Network", "description": "Healthcare Mid-size hospital system"},
+    {"id": "company_2", "name": "BuildWell Construction Group", "description": "Commercial Construction"},
+    {"id": "company_3", "name": "Sparkly Studios", "description": "Creative Media - Startup animation studio"}
 ]
 
 class FirestoreService:
