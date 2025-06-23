@@ -909,11 +909,11 @@ For production deployment, you MUST set Firebase environment variables for front
 2. Copy the config values and set them as environment variables:
    ```bash
    # Example values (replace with your actual config)
-   FIREBASE_API_KEY=AIzaSyBBz_ndXGc-4hIJl7rbXHAn_69nyw4lfbI
-   FIREBASE_AUTH_DOMAIN=laiersai.firebaseapp.com
-   FIREBASE_STORAGE_BUCKET=laiersai.firebasestorage.app
-   FIREBASE_MESSAGING_SENDER_ID=215827770748
-   FIREBASE_APP_ID=1:215827770748:web:a8cebd0e45556113bcc8f9
+   FIREBASE_API_KEY=
+   FIREBASE_AUTH_DOMAIN=
+   FIREBASE_STORAGE_BUCKET=
+   FIREBASE_MESSAGING_SENDER_ID=
+   FIREBASE_APP_ID=
    ```
 
 Without these variables, users won't be able to register or login.
