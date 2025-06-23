@@ -27,6 +27,17 @@ GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
 PORT = int(os.getenv("PORT", 8000))  # Cloud Run uses PORT env var
 
+# Dynamic base URL for ADK endpoints - works in both local and Cloud Run
+def get_base_url():
+    if ENVIRONMENT == "production":
+        # In Cloud Run, use localhost with the actual port
+        return f"http://localhost:{PORT}"
+    else:
+        # In development, use the standard localhost:8000
+        return "http://localhost:8000"
+
+BASE_URL = get_base_url()
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG if ENVIRONMENT == "development" else logging.INFO,
@@ -575,7 +586,7 @@ async def chat_with_agent(
         # First, create or ensure session exists (call ADK endpoint directly)
         async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
             # Create session first - this is required before sending messages
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_url = f"{BASE_URL}/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             try:
                 session_response = await client.post(session_url, 
                     json={"state": {}}
@@ -591,7 +602,7 @@ async def chat_with_agent(
                 # Continue - session might already exist
             
             # Send message to agent via ADK's /run endpoint
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/run"
             run_payload = {
                 "appName": agent_name,        # camelCase, not snake_case
                 "userId": user_id,            # camelCase, not snake_case  
@@ -695,7 +706,7 @@ async def create_opportunity_chat(
         # Send message to agent via ADK
         async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
             # Create session first
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_url = f"{BASE_URL}/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             try:
                 session_response = await client.post(session_url, json={"state": {}})
                 logger.debug(f"Opportunity session creation response: {session_response.status_code}")
@@ -703,7 +714,7 @@ async def create_opportunity_chat(
                 logger.debug(f"Opportunity session creation note: {e}")
             
             # Send message to agent
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/run"
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
@@ -995,7 +1006,7 @@ async def debug_adk():
         return {
             "agent_name": root_agent.name,
             "agent_model": root_agent.model,
-            "adk_dev_ui_url": "http://localhost:8000/adk/dev-ui/",
+            "adk_dev_ui_url": f"{BASE_URL}/adk/dev-ui/",
             "agent_endpoint": f"/adk/apps/{root_agent.name}/users/test/sessions/test",
             "status": "ADK mounted successfully under /adk"
         }
@@ -1060,8 +1071,8 @@ async def debug_adk_docs():
     try:
         async with httpx.AsyncClient() as client:
             # Check what endpoints ADK provides
-            docs_response = await client.get("http://localhost:8000/adk/docs")
-            openapi_response = await client.get("http://localhost:8000/adk/openapi.json")
+            docs_response = await client.get(f"{BASE_URL}/adk/docs")
+            openapi_response = await client.get(f"{BASE_URL}/adk/openapi.json")
             
             return {
                 "docs_status": docs_response.status_code,
@@ -1078,7 +1089,7 @@ async def test_agent_discovery():
     try:
         async with httpx.AsyncClient() as client:
             # Check if ADK can list our agent
-            list_apps_url = "http://localhost:8000/adk/list-apps"
+            list_apps_url = f"{BASE_URL}/adk/list-apps"
             response = await client.get(list_apps_url)
             
             return {
@@ -1269,7 +1280,7 @@ async def test_adk_complete_flow():
         
         async with httpx.AsyncClient() as client:
             # Step 1: Create session first
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_url = f"{BASE_URL}/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             session_payload = {"state": {}}
             
             logger.info(f"Creating session at: {session_url}")
@@ -1288,7 +1299,7 @@ async def test_adk_complete_flow():
                 }
             
             # Step 2: Send message to the session
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/run"
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
@@ -1415,7 +1426,7 @@ Please provide a comprehensive assessment including candidate ranking, strengths
         # Send message to agent via ADK
         async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
             # Create session first
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_url = f"{BASE_URL}/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             try:
                 session_response = await client.post(session_url, json={"state": {}})
                 logger.debug(f"Assessment session creation response: {session_response.status_code}")
@@ -1423,7 +1434,7 @@ Please provide a comprehensive assessment including candidate ranking, strengths
                 logger.debug(f"Assessment session creation note: {e}")
             
             # Send message to agent
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/run"
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
