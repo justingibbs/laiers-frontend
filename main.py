@@ -1447,15 +1447,31 @@ async def assess_candidates(
             except Exception as e:
                 logger.debug(f"Assessment session creation note: {e}")
             
-            # Send message to agent
+            # Load assessment data and provide to agent
             run_url = f"{BASE_URL}/adk/assessment/run"
+            
+            # Prepare rich context for assessment agent
+            assessment_context = f"""Assessment Context:
+**Job Opportunity:** {opportunity.get('title')}
+**Company:** {company_name}
+**Description:** {opportunity.get('description')}
+**Requirements:** {opportunity.get('requirements', 'No specific requirements listed')}
+
+**Survey Questions:**
+{chr(10).join([f"{i+1}. {q.get('question', '')}" for i, q in enumerate(opportunity.get('survey_questions', []))])}
+
+**Candidates:** {len(applications)} applicant(s) have applied
+{chr(10).join([f"- {app['applicant_name']} ({app['applicant_email']})" for app in applications])}
+
+**User Question:** {message}"""
+            
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
                 "sessionId": session_id,
                 "newMessage": {
                     "role": "user",
-                    "parts": [{"text": message}]
+                    "parts": [{"text": assessment_context}]
                 },
                 "streaming": False
             }
