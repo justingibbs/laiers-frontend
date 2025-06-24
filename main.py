@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -26,6 +27,17 @@ GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 ADK_BUCKET_NAME = os.getenv("ADK_BUCKET_NAME")
 PORT = int(os.getenv("PORT", 8000))  # Cloud Run uses PORT env var
+
+# Dynamic base URL for ADK endpoints - works in both local and Cloud Run
+def get_base_url():
+    if ENVIRONMENT == "production":
+        # In Cloud Run, use localhost with the actual port
+        return f"http://localhost:{PORT}"
+    else:
+        # In development, use the standard localhost:8000
+        return "http://localhost:8000"
+
+BASE_URL = get_base_url()
 
 # Configure logging
 logging.basicConfig(
@@ -143,28 +155,120 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Get ADK app and mount it under /adk path
-AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
-logger.info(f"Looking for agents in directory: {AGENT_DIR}")
+# Mount three independent ADK agents
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+logger.info(f"Looking for agents in directory: {BASE_DIR}")
 
 try:
-    adk_app = get_fast_api_app(
-        agents_dir=AGENT_DIR,
-        # Remove session_db_url to use ADK's default cloud-based managed sessions
+    # Mount dashboard agent (job_matching_agent)
+    dashboard_app = get_fast_api_app(
+        agents_dir=os.path.join(BASE_DIR, "job_matching_agent"),
         allow_origins=["*"] if ENVIRONMENT == "development" else [],
-        web=True,  # This enables the dev UI
+        web=True,  # This enables the dev UI for dashboard agent
         trace_to_cloud=False
     )
-    logger.info("ADK app created successfully")
-    logger.info(f"ADK app routes: {[route.path for route in adk_app.routes if hasattr(route, 'path')]}")
+    app.mount("/adk/dashboard", dashboard_app, name="adk-dashboard")
+    logger.info("Dashboard agent mounted under /adk/dashboard")
     
-    # Mount ADK app under /adk prefix
-    app.mount("/adk", adk_app, name="adk")
-    logger.info("ADK app mounted under /adk")
+    # Mount job posting agent
+    posting_app = get_fast_api_app(
+        agents_dir=os.path.join(BASE_DIR, "job_posting_agent"),
+        allow_origins=["*"] if ENVIRONMENT == "development" else [],
+        web=False,  # No dev UI for specialized agents
+        trace_to_cloud=False
+    )
+    app.mount("/adk/posting", posting_app, name="adk-posting")
+    logger.info("Job posting agent mounted under /adk/posting")
+    
+    # Mount assessment agent
+    assessment_app = get_fast_api_app(
+        agents_dir=os.path.join(BASE_DIR, "assessment_agent"),
+        allow_origins=["*"] if ENVIRONMENT == "development" else [],
+        web=False,  # No dev UI for specialized agents
+        trace_to_cloud=False
+    )
+    app.mount("/adk/assessment", assessment_app, name="adk-assessment")
+    logger.info("Assessment agent mounted under /adk/assessment")
+    
+    # For backward compatibility, also mount the dashboard agent under /adk
+    app.mount("/adk", dashboard_app, name="adk-legacy")
+    logger.info("Legacy ADK mount maintained for backward compatibility")
     
 except Exception as e:
-    logger.error(f"Failed to create/mount ADK app: {e}")
+    logger.error(f"Failed to create/mount ADK apps: {e}")
     raise
+
+# Utility Functions
+def parse_opportunity_from_response(response_text: str) -> dict:
+    """Parse structured opportunity data from agent response"""
+    try:
+        # Extract the structured data between OPPORTUNITY_READY markers
+        pattern = r'OPPORTUNITY_READY\s*(.*?)(?=```|$)'
+        match = re.search(pattern, response_text, re.DOTALL)
+        
+        if not match:
+            raise ValueError("No OPPORTUNITY_READY section found")
+        
+        data_section = match.group(1).strip()
+        
+        # Parse each field
+        result = {}
+        
+        # Extract title
+        title_match = re.search(r'Title:\s*(.+)', data_section)
+        result['title'] = title_match.group(1).strip() if title_match else ""
+        
+        # Extract description
+        desc_match = re.search(r'Description:\s*(.+?)(?=\nRequirements:|$)', data_section, re.DOTALL)
+        result['description'] = desc_match.group(1).strip() if desc_match else ""
+        
+        # Extract requirements
+        req_match = re.search(r'Requirements:\s*(.+?)(?=\nLocation:|$)', data_section, re.DOTALL)
+        result['requirements'] = req_match.group(1).strip() if req_match else ""
+        
+        # Extract location
+        loc_match = re.search(r'Location:\s*(.+)', data_section)
+        result['location'] = loc_match.group(1).strip() if loc_match else ""
+        
+        # Extract employment type
+        emp_match = re.search(r'Employment Type:\s*(.+)', data_section)
+        result['employment_type'] = emp_match.group(1).strip() if emp_match else "full-time"
+        
+        # Extract salary range
+        sal_match = re.search(r'Salary Range:\s*(.+)', data_section)
+        salary = sal_match.group(1).strip() if sal_match else ""
+        if salary and salary.lower() != "not specified":
+            result['salary_range'] = salary
+        
+        # Extract survey questions
+        questions = []
+        question_pattern = r'(\d+)\.\s*(.+?)(?=\n\d+\.|$)'
+        question_matches = re.findall(question_pattern, data_section, re.DOTALL)
+        
+        for _, question_text in question_matches:
+            questions.append({
+                "question": question_text.strip(),
+                "type": "text",
+                "required": True
+            })
+        
+        result['survey_questions'] = questions
+        
+        # Validate required fields
+        required_fields = ['title', 'description', 'requirements', 'location', 'employment_type']
+        missing_fields = [field for field in required_fields if not result.get(field)]
+        
+        if missing_fields:
+            raise ValueError(f"Missing required fields: {missing_fields}")
+        
+        if len(questions) < 2:
+            raise ValueError("At least 2 survey questions are required")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error parsing opportunity data: {e}")
+        raise ValueError(f"Failed to parse opportunity: {str(e)}")
 
 # Auth Helper Functions
 async def get_current_user(session_token: str = Cookie(None)) -> dict | None:
@@ -575,7 +679,7 @@ async def chat_with_agent(
         # First, create or ensure session exists (call ADK endpoint directly)
         async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
             # Create session first - this is required before sending messages
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_url = f"{BASE_URL}/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             try:
                 session_response = await client.post(session_url, 
                     json={"state": {}}
@@ -591,7 +695,7 @@ async def chat_with_agent(
                 # Continue - session might already exist
             
             # Send message to agent via ADK's /run endpoint
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/run"
             run_payload = {
                 "appName": agent_name,        # camelCase, not snake_case
                 "userId": user_id,            # camelCase, not snake_case  
@@ -678,54 +782,61 @@ async def create_opportunity_chat(
         if user_profile.get('user_type') != 'company' or user_profile.get('company_id') != company_id:
             raise HTTPException(status_code=403, detail="Access denied")
         
-        # Get agent name from the mounted ADK app
-        from job_matching_agent.agent import root_agent
-        agent_name = root_agent.name
+        # Use dedicated job posting agent
+        agent_name = "job_posting_agent"
         
         # Prepare session and user IDs
-        session_id = f"opportunity_session_{user['uid']}_{company_id}"
+        session_id = f"posting_session_{user['uid']}_{company_id}"
         user_id = user["uid"]
         
-        # Add context for opportunity creation
+        # Get company info for context
         company_info = await firestore_service.get_company_info(company_id)
         company_name = company_info.get('name', 'Unknown Company') if company_info else 'Unknown Company'
         
-        contextual_message = f"[User type: company, Task: create_opportunity, Company: {company_name}, Company ID: {company_id}] {message}"
-        
-        # Send message to agent via ADK
-        async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
-            # Create session first
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+        # Send message to job posting agent via ADK
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Create session with context
+            session_url = f"{BASE_URL}/adk/posting/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_headers = {
+                "X-User-Type": "company",
+                "X-User-ID": user_id,
+                "X-Company-ID": company_id,
+                "X-Company-Name": company_name,
+                "Content-Type": "application/json"
+            }
+            
             try:
-                session_response = await client.post(session_url, json={"state": {}})
-                logger.debug(f"Opportunity session creation response: {session_response.status_code}")
+                session_response = await client.post(session_url, 
+                    json={"state": {"company_id": company_id, "company_name": company_name, "created_by": user_id}}, 
+                    headers=session_headers)
+                logger.debug(f"Posting session creation response: {session_response.status_code}")
             except Exception as e:
-                logger.debug(f"Opportunity session creation note: {e}")
+                logger.debug(f"Posting session creation note: {e}")
             
             # Send message to agent
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/posting/run"
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
                 "sessionId": session_id,
                 "newMessage": {
                     "role": "user",
-                    "parts": [{"text": contextual_message}]
+                    "parts": [{"text": message}]
                 },
                 "streaming": False
             }
             
-            logger.debug(f"Sending opportunity creation payload: {run_payload}")
-            run_response = await client.post(run_url, json=run_payload)
+            logger.debug(f"Sending job posting payload: {run_payload}")
+            run_response = await client.post(run_url, json=run_payload, headers=session_headers)
             
             if run_response.status_code != 200:
                 error_details = run_response.text
-                logger.error(f"ADK opportunity creation error {run_response.status_code}: {error_details}")
+                logger.error(f"Job posting ADK error {run_response.status_code}: {error_details}")
                 raise httpx.HTTPStatusError(f"ADK endpoint error: {error_details}", request=run_response.request, response=run_response)
             
             # Parse the response
             events = run_response.json()
-            final_response = "I'm ready to help you create an opportunity. Please provide details about the job position."
+            final_response = "Hello! I'm your specialized job posting assistant. Let's create an amazing opportunity together!"
             
             if isinstance(events, list):
                 for event in events:
@@ -745,97 +856,44 @@ async def create_opportunity_chat(
                                 final_response = part["text"]
                                 break
         
-        # Check if the agent response contains a structured opportunity
-        if "OPPORTUNITY_READY:" in final_response:
+        # Check if agent provided structured opportunity data
+        if "OPPORTUNITY_READY" in final_response:
             try:
-                # Parse the structured opportunity data
-                lines = final_response.split('\n')
-                opportunity_data = {
+                opportunity_data = parse_opportunity_from_response(final_response)
+                opportunity_data.update({
                     "company_id": company_id,
                     "company_name": company_name,
-                    "created_by": user['uid']
-                }
+                    "created_by": user_id,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                    "status": "active"
+                })
                 
-                survey_questions = []
-                current_section = None
-                inside_code_block = False
-                
-                for line in lines:
-                    line = line.strip()
-                    
-                    # Handle code block markers
-                    if line.startswith("```"):
-                        inside_code_block = not inside_code_block
-                        continue
-                    
-                    # Skip lines outside the code block if we found one
-                    if "```" in final_response and not inside_code_block:
-                        continue
-                    
-                    if line.startswith("Title:"):
-                        opportunity_data["title"] = line.replace("Title:", "").strip()
-                    elif line.startswith("Description:"):
-                        # Handle multi-line descriptions
-                        desc = line.replace("Description:", "").strip()
-                        opportunity_data["description"] = desc
-                    elif line.startswith("Requirements:") or line.startswith("Required Skills") or line.startswith("Key Responsibilities:"):
-                        # Handle various requirement formats
-                        reqs = line.replace("Requirements:", "").replace("Required Skills", "").replace("Key Responsibilities:", "").strip()
-                        opportunity_data["requirements"] = reqs
-                    elif line.startswith("Location:"):
-                        opportunity_data["location"] = line.replace("Location:", "").strip()
-                    elif line.startswith("Employment Type:"):
-                        opportunity_data["employment_type"] = line.replace("Employment Type:", "").strip()
-                    elif line.startswith("Salary Range:") or "salary range:" in line.lower():
-                        salary = line.replace("Salary Range:", "").replace("salary range:", "").strip()
-                        if salary.lower() not in ["not specified", "n/a", ""]:
-                            opportunity_data["salary_range"] = salary
-                    elif line.startswith("Survey Questions:"):
-                        current_section = "survey"
-                    elif current_section == "survey" and line and (line[0].isdigit() or line.startswith("-")):
-                        # Extract question text (remove numbering)
-                        question_text = line
-                        if ". " in question_text:
-                            question_text = question_text.split(". ", 1)[1]
-                        elif "- " in question_text:
-                            question_text = question_text.replace("- ", "")
-                        
-                        if question_text.strip():  # Only add non-empty questions
-                            survey_questions.append({
-                                "question": question_text.strip(),
-                                "type": "text",
-                                "required": True
-                            })
-                
-                # Add survey questions
-                opportunity_data["survey_questions"] = survey_questions
-                
-                # Log for debugging
-                logger.info(f"Parsed opportunity data: title='{opportunity_data.get('title')}', questions={len(survey_questions)}")
-                
-                # Create the opportunity
+                # Create opportunity in Firestore
                 opportunity_id = await firestore_service.create_opportunity(opportunity_data)
                 
                 if opportunity_id:
-                    logger.info(f"Opportunity created successfully: {opportunity_id}")
-                    # Return success message with link to view the created opportunity
+                    logger.info(f"Successfully created opportunity {opportunity_id} from agent response")
                     final_response = f"""🎉 **Opportunity Created Successfully!**
 
-Your job opportunity "{opportunity_data.get('title', 'New Position')}" has been published and is now live!
+**"{opportunity_data.get('title')}"** has been posted and is now live on your company page.
+
+**Opportunity ID:** `{opportunity_id}`
 
 **Next Steps:**
-- [View the opportunity](/opportunities/{opportunity_id}) to see how it looks to applicants
-- [Return to company page](/company/{company_id}) to see it in your opportunities list
-- Share the opportunity link with your network
+• [View your opportunity](/opportunities/{opportunity_id}) 
+• [Go to company dashboard](/company/{company_id})
+• [Create another opportunity](/company/{company_id}/opportunities/create)
 
-The opportunity includes {len(survey_questions)} screening questions to help you find the best candidates. Applications will be collected and you can review them through your company dashboard."""
+Candidates can now discover and apply to this position!"""
                 else:
-                    final_response = "❌ Sorry, there was an error creating the opportunity. Please try again or contact support."
+                    final_response = "❌ **Creation Failed**: Unable to save opportunity to database. Please try again."
                     
-            except Exception as e:
-                logger.error(f"Error parsing/creating opportunity: {e}")
-                logger.error(f"Full agent response was: {final_response[:500]}...")
-                final_response = "❌ There was an error processing the opportunity data. Let's try again - please provide the job details once more."
+            except Exception as parse_error:
+                logger.error(f"Failed to parse opportunity data: {parse_error}")
+                final_response = f"❌ **Parsing Error**: {final_response}\n\n*Note: Please try rephrasing your request.*"
+        
+        logger.debug(f"Job posting agent response: {final_response[:200]}...")
         
         # Return HTMX partial template
         return templates.TemplateResponse("components/chat_message.html", {
@@ -995,7 +1053,7 @@ async def debug_adk():
         return {
             "agent_name": root_agent.name,
             "agent_model": root_agent.model,
-            "adk_dev_ui_url": "http://localhost:8000/adk/dev-ui/",
+            "adk_dev_ui_url": f"{BASE_URL}/adk/dev-ui/",
             "agent_endpoint": f"/adk/apps/{root_agent.name}/users/test/sessions/test",
             "status": "ADK mounted successfully under /adk"
         }
@@ -1060,8 +1118,8 @@ async def debug_adk_docs():
     try:
         async with httpx.AsyncClient() as client:
             # Check what endpoints ADK provides
-            docs_response = await client.get("http://localhost:8000/adk/docs")
-            openapi_response = await client.get("http://localhost:8000/adk/openapi.json")
+            docs_response = await client.get(f"{BASE_URL}/adk/docs")
+            openapi_response = await client.get(f"{BASE_URL}/adk/openapi.json")
             
             return {
                 "docs_status": docs_response.status_code,
@@ -1078,7 +1136,7 @@ async def test_agent_discovery():
     try:
         async with httpx.AsyncClient() as client:
             # Check if ADK can list our agent
-            list_apps_url = "http://localhost:8000/adk/list-apps"
+            list_apps_url = f"{BASE_URL}/adk/list-apps"
             response = await client.get(list_apps_url)
             
             return {
@@ -1269,7 +1327,7 @@ async def test_adk_complete_flow():
         
         async with httpx.AsyncClient() as client:
             # Step 1: Create session first
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_url = f"{BASE_URL}/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
             session_payload = {"state": {}}
             
             logger.info(f"Creating session at: {session_url}")
@@ -1288,7 +1346,7 @@ async def test_adk_complete_flow():
                 }
             
             # Step 2: Send message to the session
-            run_url = "http://localhost:8000/adk/run"
+            run_url = f"{BASE_URL}/adk/run"
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
@@ -1358,94 +1416,77 @@ async def assess_candidates(
         # Get applications for this opportunity
         applications = await firestore_service.get_applications_by_opportunity(opportunity_id)
         
-        # Get agent name from the mounted ADK app
-        from job_matching_agent.agent import root_agent
-        agent_name = root_agent.name
+        # Use dedicated assessment agent
+        agent_name = "assessment_agent"
         
         # Prepare session and user IDs
         session_id = f"assessment_session_{user['uid']}_{opportunity_id}"
         user_id = user["uid"]
         
-        # Add context for assessment task
+        # Get company info for context
         company_info = await firestore_service.get_company_info(user_profile.get('company_id'))
         company_name = company_info.get('name', 'Unknown Company') if company_info else 'Unknown Company'
         
-        # Create rich context message with opportunity and applications data
-        # Format data properly for the assessment agent tool
-        opportunity_data = {
-            "title": opportunity.get('title', ''),
-            "description": opportunity.get('description', ''),
-            "requirements": opportunity.get('requirements', ''),
-            "survey_questions": opportunity.get('survey_questions', []),
-            "company_name": company_name,
-            "company_id": user_profile.get('company_id'),
-            "opportunity_id": opportunity_id
-        }
-        
-        # Format applications data
-        applications_data = []
-        for app in applications:
-            applications_data.append({
-                "applicant_name": app.get('applicant_name', 'Unknown'),
-                "applicant_email": app.get('applicant_email', 'Unknown'),
-                "applied_at": str(app.get('applied_at', 'Unknown')),
-                "survey_responses": app.get('survey_responses', {})
-            })
-        
-        # Create structured request for assessment agent
-        assessment_request = f"""Assess candidates for this position:
-
-**Job Opportunity:** {opportunity_data['title']}
-**Company:** {opportunity_data['company_name']}
-**Description:** {opportunity_data['description']}
-**Requirements:** {opportunity_data.get('requirements', 'No specific requirements listed')}
-
-**Survey Questions:**
-{chr(10).join([f"{i+1}. {q.get('question', '')}" for i, q in enumerate(opportunity_data['survey_questions'])])}
-
-**Candidates to Evaluate:** {len(applications_data)} applicant(s)
-{chr(10).join([f"- {app['applicant_name']} ({app['applicant_email']})" for app in applications_data])}
-
-**User Request:** {message}
-
-Please provide a comprehensive assessment including candidate ranking, strengths/weaknesses, and interview recommendations."""
-
-        contextual_message = f"[User type: company, Task: assess_candidates, Opportunity ID: {opportunity_id}] {assessment_request}"
-        
-        # Send message to agent via ADK
-        async with httpx.AsyncClient(timeout=30.0) as client:  # Increased timeout to 30 seconds
-            # Create session first
-            session_url = f"http://localhost:8000/adk/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+        # Send message to assessment agent via ADK
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Create session with context
+            session_url = f"{BASE_URL}/adk/assessment/apps/{agent_name}/users/{user_id}/sessions/{session_id}"
+            session_headers = {
+                "X-User-Type": "company",
+                "X-User-ID": user_id,
+                "X-Company-ID": user_profile.get('company_id'),
+                "X-Opportunity-ID": opportunity_id,
+                "Content-Type": "application/json"
+            }
+            
             try:
-                session_response = await client.post(session_url, json={"state": {}})
+                session_response = await client.post(session_url, 
+                    json={"state": {"opportunity_id": opportunity_id, "company_id": user_profile.get('company_id')}}, 
+                    headers=session_headers)
                 logger.debug(f"Assessment session creation response: {session_response.status_code}")
             except Exception as e:
                 logger.debug(f"Assessment session creation note: {e}")
             
-            # Send message to agent
-            run_url = "http://localhost:8000/adk/run"
+            # Load assessment data and provide to agent
+            run_url = f"{BASE_URL}/adk/assessment/run"
+            
+            # Prepare rich context for assessment agent
+            assessment_context = f"""Assessment Context:
+**Job Opportunity:** {opportunity.get('title')}
+**Company:** {company_name}
+**Description:** {opportunity.get('description')}
+**Requirements:** {opportunity.get('requirements', 'No specific requirements listed')}
+
+**Survey Questions:**
+{chr(10).join([f"{i+1}. {q.get('question', '')}" for i, q in enumerate(opportunity.get('survey_questions', []))])}
+
+**Candidates:** {len(applications)} applicant(s) have applied
+{chr(10).join([f"- {app['applicant_name']} ({app['applicant_email']})" for app in applications])}
+
+**User Question:** {message}"""
+            
             run_payload = {
                 "appName": agent_name,
                 "userId": user_id,
                 "sessionId": session_id,
                 "newMessage": {
                     "role": "user",
-                    "parts": [{"text": contextual_message}]
+                    "parts": [{"text": assessment_context}]
                 },
                 "streaming": False
             }
             
             logger.debug(f"Sending assessment payload: {run_payload}")
-            run_response = await client.post(run_url, json=run_payload)
+            run_response = await client.post(run_url, json=run_payload, headers=session_headers)
             
             if run_response.status_code != 200:
                 error_details = run_response.text
-                logger.error(f"ADK assessment error {run_response.status_code}: {error_details}")
+                logger.error(f"Assessment ADK error {run_response.status_code}: {error_details}")
                 raise httpx.HTTPStatusError(f"ADK endpoint error: {error_details}", request=run_response.request, response=run_response)
             
             # Parse the response
             events = run_response.json()
-            final_response = f"I'm ready to help you assess the {len(applications_data)} candidate{'s' if len(applications_data) != 1 else ''} for this position. What would you like to know?"
+            final_response = f"Hello! I'm your candidate assessment specialist. I'm ready to help you evaluate applicants for this opportunity."
             
             if isinstance(events, list):
                 for event in events:
@@ -1456,7 +1497,7 @@ Please provide a comprehensive assessment including candidate ranking, strengths
                                 if part.get("text"):
                                     final_response = part["text"]
                                     break
-                            if final_response != f"I'm ready to help you assess the {len(applications_data)} candidate{'s' if len(applications_data) != 1 else ''} for this position. What would you like to know?":
+                            if final_response != f"Hello! I'm your candidate assessment specialist. I'm ready to help you evaluate applicants for this opportunity.":
                                 break
                     elif event.get("content") and event.get("content", {}).get("parts"):
                         content = event["content"]

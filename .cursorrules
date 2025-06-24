@@ -135,53 +135,131 @@ async def dashboard(request: Request, user = Depends(require_auth)):
         "user_profile": user_profile
     })
 
+# WORKING PATTERN: Simplified Agent Communication
+async def call_adk_agent(agent_name: str, message: str, user_context: dict):
+    """Generic ADK agent communication - works with single mount point"""
+    payload = {
+        "appName": agent_name,  # Agent name for routing
+        "userId": user_context["uid"],
+        "sessionId": f"session_{user_context['uid']}_{agent_name}",
+        "newMessage": {"role": "user", "parts": [{"text": message}]},
+        "streaming": False
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post("http://localhost:8000/adk/run", json=payload)
+        if response.status_code == 200:
+            return response.json()[0]["content"]["parts"][0]["text"]
+        else:
+            raise Exception(f"ADK API error: {response.status_code}")
+
 @app.post("/api/chat")
 async def chat_with_agent(
     request: Request,
     message: str = Form(...),
     user = Depends(require_auth)
 ):
-    """Chat with ADK agent via HTMX"""
-    # Use ADK's HTTP API internally
-    payload = {
-        "appName": "job_matching_agent",
-        "userId": user["uid"],
-        "sessionId": f"session_{user['uid']}",
-        "newMessage": {"role": "user", "parts": [{"text": message}]},
-        "streaming": False
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post("http://localhost:8000/adk/run", json=payload)
-        agent_response = response.json()
-    
-    # Return HTMX partial
-    return templates.TemplateResponse("components/chat_message.html", {
-        "request": request,
-        "user_message": message,
-        "agent_response": agent_response[0]["content"]["parts"][0]["text"],
-        "timestamp": datetime.now()
-    })
+    """Dashboard chat with job_matching_agent"""
+    try:
+        user_profile = await firestore_service.get_user_profile(user['uid'])
+        user_context = {"uid": user["uid"], "user_type": user_profile.get('user_type')}
+        
+        # Add user context to message
+        contextual_message = f"[User type: {user_profile.get('user_type')}] {message}"
+        
+        agent_response = await call_adk_agent("job_matching_agent", contextual_message, user_context)
+        
+        return templates.TemplateResponse("components/chat_message.html", {
+            "request": request,
+            "user_message": message,
+            "agent_response": agent_response,
+            "timestamp": datetime.now()
+        })
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return templates.TemplateResponse("components/chat_error.html", {
+            "request": request,
+            "error": "Failed to process message. Please try again."
+        })
+
+@app.post("/api/opportunities/create")
+async def create_opportunity_chat(
+    request: Request,
+    message: str = Form(...),
+    company_id: str = Form(...),
+    user = Depends(require_auth)
+):
+    """Job creation chat with job_posting_agent + main app parsing"""
+    try:
+        user_context = {"uid": user["uid"], "company_id": company_id}
+        
+        # Call conversational job_posting_agent
+        agent_response = await call_adk_agent("job_posting_agent", message, user_context)
+        
+        # Parse structured output if opportunity is ready
+        if "OPPORTUNITY_READY:" in agent_response:
+            opportunity_data = parse_opportunity_from_response(agent_response)
+            opportunity_data["company_id"] = company_id
+            
+            # Main app creates in Firestore (reliable async handling)
+            opportunity = await firestore_service.create_opportunity(opportunity_data)
+            
+            # Add success message to response
+            success_message = f"\n\n✅ **Opportunity Created Successfully!** \nYou can view it at `/opportunities/{opportunity['id']}`"
+            agent_response += success_message
+        
+        return templates.TemplateResponse("components/chat_message.html", {
+            "request": request,
+            "user_message": message,
+            "agent_response": agent_response,
+            "timestamp": datetime.now()
+        })
+    except Exception as e:
+        logger.error(f"Opportunity creation error: {e}")
+        return templates.TemplateResponse("components/chat_error.html", {
+            "request": request,
+            "error": "Failed to process opportunity creation. Please try again."
+        })
+
+def parse_opportunity_from_response(response: str) -> dict:
+    """Parse structured opportunity data from agent response"""
+    try:
+        # Extract structured data using regex patterns
+        opportunity_data = {}
+        
+        title_match = re.search(r"Title:\s*(.+)", response)
+        if title_match:
+            opportunity_data["title"] = title_match.group(1).strip()
+        
+        description_match = re.search(r"Description:\s*(.+?)(?=\n[A-Z]|$)", response, re.DOTALL)
+        if description_match:
+            opportunity_data["description"] = description_match.group(1).strip()
+        
+        requirements_match = re.search(r"Requirements:\s*(.+?)(?=\n[A-Z]|$)", response, re.DOTALL)
+        if requirements_match:
+            opportunity_data["requirements"] = requirements_match.group(1).strip()
+        
+        # Add additional parsing for location, employment_type, salary_range, etc.
+        
+        return opportunity_data
+    except Exception as e:
+        logger.error(f"Error parsing opportunity data: {e}")
+        return {}
 ```
 
-### ADK Agent Structure (REQUIRED) - UPDATED WITH SUB-AGENTS
+### ADK Agent Structure (SIMPLIFIED WORKING PATTERN)
 ```python
 # job_matching_agent/__init__.py
 from . import agent
 
 # job_matching_agent/agent.py
 from google.adk.agents import LlmAgent
-from google.adk.tools.agent_tool import AgentTool
-from .job_posting_agent import job_posting_agent
-from .assessment_agent import assessment_agent
 
-# This MUST be named 'root_agent' for ADK discovery
+# This MUST be named 'root_agent' for ADK discovery - SIMPLIFIED PATTERN
 root_agent = LlmAgent(
     name="job_matching_agent",
     model="gemini-2.0-flash-lite",
     instruction="""You are a job matching assistant for a professional platform.
-
-Context: You will receive user information including their user_type ('talent' or 'company') and potentially a task type.
 
 For 'talent' users:
 - Help with resume review and optimization
@@ -197,38 +275,56 @@ For 'company' users:
 - Help with employer branding advice
 - Support recruitment process optimization
 
-For 'company' users with Task: 'create_opportunity':
-IMMEDIATELY use the job_posting_agent tool. Do not create job opportunities yourself - always delegate this task to the job_posting_agent tool which specializes in the complete workflow including soft skills identification and behavioral interview question creation.
-
-For 'company' users with Task: 'assess_candidates':
-IMMEDIATELY use the assessment_agent tool. Do not attempt to evaluate candidates yourself - always delegate this task to the assessment_agent tool which specializes in analyzing survey responses, ranking candidates, and providing evaluation insights.
-
-Use the get_user_context tool to understand who you're talking to and the analyze_user_needs tool to provide appropriate guidance.
-
 Always maintain a professional, helpful, and encouraging tone. Ask follow-up questions to better understand their specific needs and provide personalized advice.""",
-    tools=[
-        AgentTool(agent=job_posting_agent),
-        AgentTool(agent=assessment_agent),
-        # ... other tools
-    ]
+    tools=[]  # NO FUNCTION TOOLS - Pure conversational agent
 )
 
-# job_matching_agent/job_posting_agent.py
+# job_posting_agent/agent.py (separate directory)
 from google.adk.agents import LlmAgent
 
-job_posting_agent = LlmAgent(
+# This MUST be named 'root_agent' for ADK discovery
+root_agent = LlmAgent(
     name="job_posting_agent",
     model="gemini-2.0-flash-lite",
-    instruction="""You are a specialized job posting creation assistant..."""
+    instruction="""You are a specialized job posting creation assistant.
+
+Guide users through creating comprehensive job opportunities by asking questions about:
+- Job title and role description
+- Required qualifications and experience
+- Preferred skills and competencies
+- Company culture and benefits
+- Compensation range and employment type
+- Location and work arrangement
+
+When you have collected sufficient information, format the response with:
+
+OPPORTUNITY_READY:
+Title: [Job Title]
+Description: [Detailed job description]
+Requirements: [Required qualifications]
+Location: [Job location]
+Employment Type: [Full-time/Part-time/Contract]
+Salary Range: [Compensation range]
+Survey Questions: [Relevant application questions]
+
+Focus on soft skills and cultural fit questions in your survey generation.""",
+    tools=[]  # NO FUNCTION TOOLS - Pure conversational agent
 )
 
-# job_matching_agent/assessment_agent.py  
+# assessment_agent/agent.py (separate directory)  
 from google.adk.agents import LlmAgent
 
-assessment_agent = LlmAgent(
+# This MUST be named 'root_agent' for ADK discovery
+root_agent = LlmAgent(
     name="assessment_agent",
     model="gemini-2.0-flash-lite", 
     instruction="""You are a candidate assessment specialist that helps company users evaluate job applicants.
+
+You will receive comprehensive context including:
+- Job opportunity details and requirements
+- Survey questions asked to candidates
+- Complete candidate application data and responses
+- Specific user questions about assessment
 
 Your expertise includes:
 - Analyzing candidate survey responses against job requirements
@@ -244,7 +340,8 @@ When evaluating candidates:
 4. Consider communication skills, attention to detail, and cultural fit indicators
 5. Provide balanced assessments highlighting both strengths and areas of concern
 
-Always maintain objectivity and focus on job-relevant criteria. Provide constructive insights that help hiring managers make informed decisions while avoiding bias."""
+Always maintain objectivity and focus on job-relevant criteria. Provide constructive insights that help hiring managers make informed decisions while avoiding bias.""",
+    tools=[]  # NO FUNCTION TOOLS - Pure conversational agent with rich context
 )
 ```
 
@@ -311,36 +408,70 @@ async def assess_candidates(
         # Get applications for this opportunity
         applications = await firestore_service.get_applications_by_opportunity(opportunity_id)
         
-        # Prepare rich context for assessment agent
-        assessment_request = f"""Assess candidates for this position:
+        # Prepare comprehensive context for assessment agent (WORKING PATTERN)
+        assessment_context = f"""**CANDIDATE ASSESSMENT REQUEST**
 
 **Job Opportunity:** {opportunity.get('title')}
-**Company:** {company_name}
+**Company:** {user_profile.get('company_name', 'Unknown Company')}
 **Description:** {opportunity.get('description')}
 **Requirements:** {opportunity.get('requirements', 'No specific requirements listed')}
 
 **Survey Questions:**
-{chr(10).join([f"{i+1}. {q.get('question', '')}" for i, q in enumerate(opportunity.get('survey_questions', []))])}
+{format_survey_questions(opportunity.get('survey_questions', []))}
 
-**Candidates to Evaluate:** {len(applications)} applicant(s)
-{chr(10).join([f"- {app['applicant_name']} ({app['applicant_email']})" for app in applications])}
+**Candidate Applications ({len(applications)} total):**
+{format_candidate_data(applications)}
 
-**User Request:** {message}
+**Assessment Request:** {message}
 
-Please provide a comprehensive assessment including candidate ranking, strengths/weaknesses, and interview recommendations."""
+Please provide comprehensive evaluation based on the above context."""
 
-        contextual_message = f"[User type: company, Task: assess_candidates, Opportunity ID: {opportunity_id}] {assessment_request}"
+        user_context = {"uid": user["uid"], "company_id": user_profile.get('company_id')}
         
-        # Send to ADK agent with proper timeout
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # ... ADK communication logic
-            
+        # Call assessment agent with rich context
+        agent_response = await call_adk_agent("assessment_agent", assessment_context, user_context)
+        
         return templates.TemplateResponse("components/chat_message.html", {
             "request": request,
             "user_message": message,
-            "agent_response": final_response,
+            "agent_response": agent_response,
             "timestamp": datetime.now()
         })
+
+def format_survey_questions(questions):
+    """Format survey questions for agent context"""
+    if not questions:
+        return "No survey questions available"
+    
+    formatted = []
+    for i, question in enumerate(questions):
+        if isinstance(question, dict):
+            formatted.append(f"{i+1}. {question.get('question', f'Question {i+1}')}")
+        else:
+            formatted.append(f"{i+1}. {str(question)}")
+    return "\n".join(formatted)
+
+def format_candidate_data(applications):
+    """Format candidate data for agent context"""
+    if not applications:
+        return "No applications available"
+    
+    formatted = []
+    for app in applications:
+        formatted.append(f"\n**Candidate:** {app.get('applicant_name', 'Unknown')}")
+        formatted.append(f"**Email:** {app.get('applicant_email', 'Unknown')}")
+        formatted.append(f"**Applied:** {app.get('created_at', 'Unknown date')}")
+        
+        survey_responses = app.get('survey_responses', {})
+        if survey_responses:
+            formatted.append("**Survey Responses:**")
+            for key, response in survey_responses.items():
+                formatted.append(f"  - {key}: {response}")
+        else:
+            formatted.append("  - No survey responses")
+        formatted.append("---")
+    
+    return "\n".join(formatted)
         
     except Exception as e:
         logger.error(f"Assessment chat error: {e}")
@@ -531,27 +662,35 @@ assessment_agent = LlmAgent(
 - **User Context**: Show different chat welcome based on user_type
 - **Conditional Features**: Show assessment interface only to company users who own the opportunity
 
-### ADK-Specific Rules - UPDATED BASED ON TESTING:
-- **Agent Discovery**: ADK looks for `root_agent` variable in agent directory
-- **Sub-Agent Integration**: Use AgentTool to mount sub-agents as tools
-- **Mounting**: Mount ADK app under path, don't replace main FastAPI app
+### ADK-Specific Rules - WORKING IMPLEMENTATION PATTERNS:
+- **Agent Discovery**: ADK looks for `root_agent` variable in each agent directory
+- **Single Mount Point**: Mount one ADK app, route different agents via HTTP calls with `appName`
+- **Simplified Agents**: Use conversational agents only - NO FUNCTION TOOLS
+- **Main App Integration**: All database operations handled by FastAPI app, not agents
+- **Context Injection**: Provide rich context in message content, not session state
+- **Structured Output**: Agents return formatted text, main app parses with regex
 - **Dev UI**: Always accessible at `/adk/dev-ui/` (with trailing slash)
-- **Agent Communication**: Use HTTP calls to `/adk/run` endpoint, not direct Runner imports
+- **Agent Communication**: Use HTTP calls to `/adk/run` with `appName` parameter
 - **Environment Variables**: Must have `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`
 - **API Dependencies**: Vertex AI API must be enabled in Google Cloud Console
 - **Authentication**: Use Application Default Credentials (gcloud auth application-default login)
 - **Secret Manager**: Use `roles/secretmanager.secretAccessor` for Cloud Run service account
-- **Timeout Handling**: Use 30-second timeouts for complex agent operations like assessment
+- **Timeout Handling**: Use 30-second timeouts for complex operations like assessment
+- **Error Handling**: Wrap all ADK calls in try/catch blocks with user-friendly error messages
 
-### What to NEVER suggest:
-- **Replacing ADK patterns**: Don't suggest alternatives to ADK's agent structure
+### What to NEVER suggest (UPDATED BASED ON LEARNED LIMITATIONS):
+- **Complex Function Tools**: ADK function calling is unreliable - use conversational agents only
+- **Async Function Tools**: Causes "event loop already running" errors - main app handles async
+- **Multiple ADK Mounts**: Use single mount point, route via `appName` parameter
+- **Sub-Agent Architecture**: AgentTool pattern doesn't work reliably - use separate directories
+- **Session State Context**: Unreliable - use rich message content injection instead
+- **Direct Database Access in Agents**: Let main app handle all Firestore operations
 - **Complex JavaScript**: Keep HTMX-only, minimal custom JS
 - **Alternative auth**: Firebase only, no custom JWT handling
 - **Database alternatives**: Firestore only, no SQLite/PostgreSQL
 - **Microservices**: Single application with mounted sub-apps only
 - **Different agent frameworks**: ADK only, no LangChain/CrewAI alternatives
 - **Direct ADK imports**: Use HTTP API calls, not direct Python imports of ADK classes
-- **Assessment without sub-agents**: Always use assessment_agent for candidate evaluation
 - **Hardcoded secrets**: Never commit API keys or sensitive config to git
 - **Insecure secret handling**: Don't use environment variables for sensitive data in production
 
@@ -720,12 +859,13 @@ except Exception as e:
 
 ### Assessment Feature Issues - NEW
 
-**Assessment Agent Not Working:**
-1. **Check Sub-Agent Structure**: Ensure `assessment_agent.py` exists with proper tools
-2. **Verify AgentTool Integration**: Confirm assessment_agent is mounted as tool in root_agent
-3. **Data Format Issues**: Check if survey questions are strings vs dictionaries
-4. **Timeout Problems**: Increase timeout to 30 seconds for complex assessments
+**Assessment Agent Not Working (UPDATED):**
+1. **Check Agent Directory**: Ensure `assessment_agent/agent.py` exists with `root_agent` variable
+2. **Verify No Function Tools**: Confirm agent has `tools=[]` - no function calling
+3. **Context Injection**: Check if rich context is provided in message content
+4. **Timeout Problems**: Use 30-second timeouts for complex operations
 5. **Access Control**: Verify company user owns the opportunity being assessed
+6. **HTTP Communication**: Verify `call_adk_agent()` function with proper `appName` parameter
 
 **Assessment UI Not Showing:**
 1. **Template Conditional**: Check user_type == 'company' and company_id matches

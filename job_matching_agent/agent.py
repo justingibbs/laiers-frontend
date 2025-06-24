@@ -1,130 +1,170 @@
 # job_matching_agent/agent.py
 from google.adk.agents import LlmAgent
-from google.adk.tools.agent_tool import AgentTool
-from .job_posting_agent import job_posting_agent
-from .assessment_agent import assessment_agent
+from google.adk.tools import FunctionTool
 from typing import Optional
 
 MODEL = "gemini-2.0-flash-lite"
 
-def get_user_context(message: str) -> dict:
-    """Extract user context from the message format: [User type: company, Task: create_opportunity, ...] message"""
-    context = {
-        "user_type": "unknown",
-        "task": None,
-        "company_name": None,
-        "company_id": None,
-        "opportunity_id": None,
-        "clean_message": message
-    }
-    
-    # Parse context from message format like: [User type: company, Task: assess_candidates, Opportunity ID: id] actual message
-    if message.startswith('[') and ']' in message:
-        try:
-            context_part = message[1:message.index(']')]
-            actual_message = message[message.index(']') + 1:].strip()
-            context["clean_message"] = actual_message
-            
-            # Parse key-value pairs
-            for part in context_part.split(', '):
-                if ': ' in part:
-                    key, value = part.split(': ', 1)
-                    if key.lower() == "user type":
-                        context["user_type"] = value.lower()
-                    elif key.lower() == "task":
-                        context["task"] = value
-                    elif key.lower() == "company":
-                        context["company_name"] = value
-                    elif key.lower() == "company id":
-                        context["company_id"] = value
-                    elif key.lower() == "opportunity id":
-                        context["opportunity_id"] = value
-        except Exception:
-            # If parsing fails, just return the original message
-            pass
-    
-    return context
-
-def analyze_user_needs(user_type: str, task: Optional[str] = None) -> str:
-    """Analyze what the user likely needs based on their type and task"""
+def get_user_guidance(user_type: str, task: Optional[str] = None) -> str:
+    """Provide user guidance based on their type and current context"""
     if user_type == "talent":
         return """
-        Talent users typically need:
-        - Resume review and optimization tips
-        - Job search strategies and guidance
-        - Interview preparation and practice
-        - Skill development recommendations
-        - Career advancement advice
-        - Application tips and best practices
+**Welcome to Laiers.ai! I'm here to help with your job search.**
+
+As a talent user, I can assist you with:
+• **Resume review and optimization** - Get tips to make your resume stand out
+• **Job search strategies** - Learn effective ways to find opportunities
+• **Interview preparation** - Practice and get guidance for interviews
+• **Skill development** - Identify areas to improve and grow
+• **Career advancement** - Plan your next career moves
+• **Application tips** - Best practices for job applications
+
+**Ready to explore opportunities?** [Browse all available jobs](/opportunities)
+
+What would you like help with today?
         """
     elif user_type == "company":
         if task == "create_opportunity":
             return """
-            Company user creating opportunity needs:
-            - Use the job_posting_agent tool for complete workflow
-            - The tool will guide through job details, requirements, and logistics
-            - Will identify critical soft skills for the role
-            - Will generate behavioral interview questions
-            - Will create structured opportunity ready for publishing
+**Let's create a new job opportunity!**
+
+I'll guide you through the process step-by-step:
+1. Job title and description
+2. Requirements and qualifications
+3. Location and employment type
+4. Key soft skills identification
+5. Survey question creation
+6. Final review and publishing
+
+This specialized agent will help you create a complete, professional job posting with screening questions to attract the right candidates.
+
+**What position would you like to create?** Please provide the job title and any details you have.
             """
         elif task == "assess_candidates":
             return """
-            Company user assessing candidates needs:
-            - Use the assessment_agent tool for candidate evaluation
-            - The tool will analyze survey responses against job requirements
-            - Will rank candidates based on qualifications and fit
-            - Will suggest tailored interview questions for each candidate
-            - Will provide objective evaluation criteria and insights
+**Candidate Assessment Dashboard**
+
+I'll help you evaluate applicants for this opportunity:
+• **Load and review** all candidate applications
+• **Analyze responses** against job requirements  
+• **Rank candidates** by fit and qualifications
+• **Generate interview questions** tailored to each candidate
+• **Provide recommendations** for next steps
+
+**Ready to assess?** Tell me what specific aspect you'd like to focus on - overall ranking, specific candidate review, or interview preparation.
             """
         else:
             return """
-            Company users typically need:
-            - Help writing effective job descriptions
-            - Candidate screening and evaluation guidance  
-            - Hiring best practices and strategies
-            - Employer branding advice
-            - Recruitment process optimization
-            - Interview question development
+**Welcome to your Company Dashboard!**
+
+As a company user, I can help you with:
+• **Creating job opportunities** - Use our AI-guided posting system
+• **Managing applications** - Review and assess candidates
+• **Hiring best practices** - Get expert recruitment advice
+• **Candidate screening** - Effective evaluation strategies
+• **Employer branding** - Attract top talent
+• **Interview optimization** - Improve your hiring process
+
+**Quick Actions:**
+• Use the "Create Opportunity" button on your company page
+• View your active opportunities from your company dashboard
+• Browse the opportunities page to see how your postings appear to candidates
+
+What can I help you with today?
             """
     else:
-        return "Unknown user type - please provide more context about how I can help you."
+        return "Welcome to Laiers.ai! Please let me know if you're looking for job opportunities (talent) or hiring candidates (company), and I'll provide personalized guidance."
 
+def navigate_to_feature(destination: str, context: dict) -> str:
+    """Provide navigation guidance to specific features"""
+    user_type = context.get('user_type', 'unknown')
+    company_id = context.get('company_id')
+    
+    if destination == "create_opportunity" and user_type == "company":
+        return """
+**Ready to create an opportunity?**
+
+Navigate to your company page and click the "Create New Opportunity" button to get started.
+
+This will take you to our AI-guided job posting system where you'll work with a specialized agent to:
+• Define job requirements and responsibilities
+• Identify key soft skills needed
+• Create behavioral interview questions
+• Publish a professional opportunity listing
+
+The process takes about 5-10 minutes and results in a complete job posting ready to attract qualified candidates.
+        """
+    elif destination == "opportunities_list" and user_type == "talent":
+        return f"""
+**Explore available opportunities!**
+
+Browse all current job openings: [View All Opportunities](/opportunities)
+
+You'll see:
+• Complete job descriptions and requirements
+• Company information and culture
+• Application surveys tailored to each role
+• Direct application submission
+• Real-time application status
+
+Find your perfect match and apply directly through our platform!
+        """
+    elif destination == "company_dashboard" and user_type == "company":
+        return """
+**Visit your company dashboard:**
+
+Navigate to your company page using the main navigation or dashboard.
+
+From there you can:
+• View all your active job postings
+• See application counts and status
+• Access candidate assessments
+• Create new opportunities
+• Manage your company profile
+
+Your central hub for all hiring activities!
+        """
+    else:
+        return "I can help guide you to the right section. What specific feature are you looking for?"
+
+# Simplified job matching agent focused on dashboard interactions
 job_matching_agent = LlmAgent(
     name="job_matching_agent",
     model=MODEL,
-    description="Main job matching assistant that handles talent and company needs, with specialized sub-agents for complex tasks.",
-    instruction="""You are a job matching assistant for a professional platform.
+    description="Dashboard agent that provides guidance and navigation for talent and company users on the job matching platform.",
+    instruction="""You are the main dashboard assistant for Laiers.ai, a professional job matching platform.
 
-Context: You will receive user information including their user_type ('talent' or 'company') and potentially a task type.
+**Your Role:**
+- Welcome users and provide personalized guidance
+- Help users navigate to appropriate features
+- Offer general advice for job searching (talent) or hiring (company)
+- Direct users to specialized tools and agents
 
-For 'talent' users:
-- Help with resume review and optimization
-- Provide job search strategies and tips
-- Offer interview preparation guidance
-- Suggest skill development opportunities
-- Answer career-related questions
+**Key Context:**
+Users have a user_type ('talent' or 'company') and may have specific tasks:
+- talent: Looking for jobs, career advice, application help
+- company: Creating opportunities, assessing candidates, hiring guidance
 
-For 'company' users:
-- Assist with writing effective job descriptions
-- Provide candidate screening and evaluation guidance
-- Offer hiring best practices and strategies
-- Help with employer branding advice
-- Support recruitment process optimization
+**Important Navigation:**
+- For opportunity creation: Direct users to their company dashboard creation flow
+- For candidate assessment: Available on opportunity detail pages
+- For job browsing: Direct to `/opportunities`
 
-For 'company' users with Task: 'create_opportunity':
-IMMEDIATELY use the job_posting_agent tool. Do not create job opportunities yourself - always delegate this task to the job_posting_agent tool which specializes in the complete workflow including soft skills identification and behavioral interview question creation.
+**Your Approach:**
+1. Use get_user_guidance to provide relevant welcome messages and options
+2. Use navigate_to_feature to help users reach specific tools
+3. Offer helpful, actionable advice within your expertise
+4. Be encouraging and professional
 
-For 'company' users with Task: 'assess_candidates':
-IMMEDIATELY use the assessment_agent tool. Do not attempt to evaluate candidates yourself - always delegate this task to the assessment_agent tool which specializes in analyzing survey responses, ranking candidates, and providing evaluation insights.
+**What you DON'T do:**
+- Create opportunities directly (that's handled by the specialized posting agent)
+- Assess candidates directly (that's handled by the specialized assessment agent)
+- Make hiring decisions or provide specific candidate rankings
 
-Use the get_user_context tool to understand who you're talking to and the analyze_user_needs tool to provide appropriate guidance.
-
-Always maintain a professional, helpful, and encouraging tone. Ask follow-up questions to better understand their specific needs and provide personalized advice.""",
+Instead, guide users to the right tools and provide general best practices and advice.""",
     tools=[
-        get_user_context,
-        analyze_user_needs,
-        AgentTool(agent=job_posting_agent),
-        AgentTool(agent=assessment_agent),
+        FunctionTool(get_user_guidance),
+        FunctionTool(navigate_to_feature)
     ],
 )
 
