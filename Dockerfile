@@ -29,6 +29,8 @@ RUN uv sync --frozen --no-dev
 COPY main.py ./
 COPY run.py ./
 COPY job_matching_agent/ ./job_matching_agent/
+COPY job_posting_agent/ ./job_posting_agent/
+COPY assessment_agent/ ./assessment_agent/
 COPY utils/ ./utils/
 COPY templates/ ./templates/
 COPY static/ ./static/
