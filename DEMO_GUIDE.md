@@ -64,3 +64,25 @@ We're looking for an **Operations Lead** to keep our teams running smoothly as w
 - Hybrid (SF-based, 2–3 days in office)  
 - Health coverage, PTO, and learning stipend  
 ```
+
+```
+# Facilities & Operations Coordinator
+
+We’re hiring a **Facilities & Operations Coordinator** to keep our clinical spaces safe, stocked, and running like clockwork. You’ll be the go-to for daily site operations, vendor coordination, and behind-the-scenes support that keeps care delivery smooth.
+
+## You’ll:
+- Oversee clinic and office facility needs (repairs, supplies, compliance)  
+- Manage vendor relationships (janitorial, medical waste, equipment)  
+- Ensure site readiness for staff and patients  
+- Coordinate logistics for openings, closures, and special projects  
+
+## You bring:
+- 2–4 years in facilities, operations, or workplace support  
+- Strong problem-solving and follow-through  
+- Comfortable working with clinicians and cross-functional teams  
+
+## Perks:
+- $70K–$90K salary + full benefits  
+- Hybrid (onsite support in LA area clinics 2–3x/week)  
+- Medical, dental, vision, 401(k), generous time off  
+```
