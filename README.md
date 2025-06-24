@@ -203,52 +203,62 @@ The application uses Google's Agent Development Kit (ADK) to power the AI agent 
 - **Chat Interface**: Users interact with the agent through a sophisticated HTMX-powered chat interface with loading states
 - **Vertex AI Backend**: Uses Gemini models via Google Cloud Vertex AI
 
-### Agent Architecture
+### Agent Architecture (Working Implementation)
+
+**Important:** After extensive testing, we discovered that ADK's complex function calling and sub-agent patterns are unreliable. The final working architecture uses **simplified conversational agents** with **main app database integration**.
+
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                   Root Agent                                        │
-│                              job_matching_agent                                     │
-│                                                                                     │
-│  • Main orchestration and routing                                                  │
-│  • User context management (talent vs company)                                     │
-│  • Task delegation to specialized sub-agents                                       │
-│  • General job matching guidance and support                                       │
-│                                                                                     │
-│  ┌─────────────────────────────────┐    ┌─────────────────────────────────┐      │
-│  │         Sub-Agent               │    │         Sub-Agent               │      │
-│  │     job_posting_agent           │    │     assessment_agent            │      │
-│  │                                 │    │                                 │      │
-│  │ • AI-guided job creation        │    │ • Candidate evaluation          │      │
-│  │ • Structured opportunity data   │    │ • Survey response analysis      │      │
-│  │ • Survey question generation    │    │ • Candidate ranking             │      │
-│  │ • Requirements optimization     │    │ • Interview recommendations     │      │
-│  │ • Soft skills identification    │    │ • Strengths/weaknesses analysis │      │
-│  │                                 │    │ • Red flag detection            │      │
-│  │ Tools:                          │    │                                 │      │
-│  │ • create_opportunity_structure  │    │ Tools:                          │      │
-│  │ • generate_survey_questions     │    │ • analyze_candidate_fit         │      │
-│  │ • validate_job_requirements     │    │ • rank_candidates               │      │
-│  │                                 │    │ • generate_interview_questions  │      │
-│  └─────────────────────────────────┘    └─────────────────────────────────┘      │
-│                                                                                     │
-│  Triggered by:                           Triggered by:                            │
-│  • Task: create_opportunity              • Task: assess_candidates                │
-│  • Company user context                  • Company user context                   │
-│  • /api/opportunities/create             • /api/opportunities/{id}/assess         │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                                            │
-                                            ▼
-                                   ┌─────────────────┐
-                                   │   Data Flow     │
-                                   │                 │
-                                   │ Firestore       │
-                                   │ • opportunities │
-                                   │ • applications  │
-                                   │ • users         │
-                                   │ • companies     │
-                                   └─────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│                          Simplified Three-Agent Architecture                       │
+│                              "Agents for Conversation, Main App for Data"           │
+│                                                                                    │
+│  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐    │
+│  │   job_matching      │    │   job_posting       │    │   assessment        │    │
+│  │   _agent            │    │   _agent            │    │   _agent            │    │
+│  │                     │    │                     │    │                     │    │
+│  │ • Dashboard chat    │    │ • Job creation chat │    │ • Candidate eval    │    │
+│  │ • User guidance     │    │ • Returns structured│    │ • Rich context      │    │
+│  │ • General advice    │    │   OPPORTUNITY_READY │    │ • Immediate analysis│    │
+│  │                     │    │ • No database calls │    │ • No async calls    │    │
+│  │ tools: []           │    │                     │    │                     │    │
+│  │ (conversational)    │    │ tools: []           │    │ tools: []           │    │
+│  │                     │    │ (conversational)    │    │ (conversational)    │    │
+│  └─────────────────────┘    └─────────────────────┘    └─────────────────────┘    │
+│           │                           │                           │                │
+│           │                           │                           │                │
+│           ▼                           ▼                           ▼                │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │                    FastAPI Main App (All Database Operations)              │  │
+│  │                                                                           │  │
+│  │  /api/chat                /api/opportunities/create    /api/.../assess    │  │
+│  │  │                       │                           │                   │  │
+│  │  ├─ Call dashboard agent ├─ Call job_posting agent   ├─ Load rich context │  │
+│  │  ├─ Add user context     ├─ Parse OPPORTUNITY_READY  ├─ Call assess agent │  │
+│  │  └─ Return response      └─ Create in Firestore     └─ Return analysis   │  │
+│  │                                                                           │  │
+│  └─────────────────────────────────────────────────────────────────────────────┘  │
+│                                         │                                         │
+└─────────────────────────────────────────┼─────────────────────────────────────────┘
+                                          ▼
+                                 ┌─────────────────┐
+                                 │   Firestore     │
+                                 │   Database      │
+                                 │                 │
+                                 │ • opportunities │
+                                 │ • applications  │
+                                 │ • users         │
+                                 │ • companies     │
+                                 └─────────────────┘
 ```
+
+#### Key Implementation Insights:
+- **❌ Complex Function Tools**: ADK function calling is unreliable - agents claim to call functions but don't execute them
+- **❌ Async Function Tools**: Causes "event loop already running" errors in ADK's async context  
+- **❌ Sub-Agent Architecture**: AgentTool delegation doesn't work consistently
+- **✅ Conversational Agents**: Simple agents that focus on dialogue and return structured text
+- **✅ Main App Integration**: All database operations handled by proven FastAPI + Firestore patterns  
+- **✅ Rich Context Injection**: Provide comprehensive data in message content, not session state
+- **✅ Structured Output Parsing**: Main app parses agent responses with regex patterns
 
 ### Enhanced User Flow
 
